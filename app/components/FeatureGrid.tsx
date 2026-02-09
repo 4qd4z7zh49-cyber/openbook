@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { JSX } from "react";
+import type { ReactNode } from "react";
 
 type Item = {
   title: string;
   href: string;
-  icon: (active?: boolean) => JSX.Element;
+  icon: (active?: boolean) => ReactNode;
 };
 
 const items: Item[] = [
