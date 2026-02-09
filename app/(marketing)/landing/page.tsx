@@ -282,7 +282,7 @@ export default function HomeLanding() {
         <img
           ref={logoRef}
           className="heroLogo"
-          src="/openbook-logo.svg"
+          src="/openbook.png"
           alt="OPENBOOK"
         />
         <div className="layer">

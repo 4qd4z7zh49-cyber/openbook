@@ -1,26 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { buildCountryOptions } from "../_lib/countries";
+import { supabase } from "../../../lib/supabaseClient";
 
 export default function SignupPage() {
-  const countries = useMemo(() => buildCountryOptions("en"), []);
+  const router = useRouter();
+
+  // Build the country list only on the client to avoid SSR/client Intl differences
+  // that can cause Next.js hydration errors.
+  const [countries, setCountries] = useState<ReturnType<typeof buildCountryOptions>>([]);
 
   const [country, setCountry] = useState<string>("US");
   const [dial, setDial] = useState<string>("+1");
+
+  useEffect(() => {
+    // Guard just in case, though this component is client-only.
+    const list = buildCountryOptions("en");
+    setCountries(list);
+
+    // Ensure default dial code is synced with default country once list is ready.
+    const us = list.find((c) => c.code === "US");
+    if (us) setDial(us.dial);
+  }, []);
 
   const [phoneLocal, setPhoneLocal] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [pw, setPw] = useState<string>("");
   const [pw2, setPw2] = useState<string>("");
+  const [username, setUsername] = useState<string>("");
   const [showPw, setShowPw] = useState(false);
   const [showPw2, setShowPw2] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
 
   function onCountryChange(next: string) {
     setCountry(next);
-    const found = countries.find((c) => c.code === next);
+    const found = countries?.find?.((c) => c.code === next);
     if (found) setDial(found.dial);
   }
 
@@ -34,6 +53,48 @@ export default function SignupPage() {
 
   const pwMatch = pw.length > 0 && pw === pw2;
 
+  async function handleSignup(e?: React.FormEvent) {
+    e?.preventDefault();
+    setError("");
+
+    if (!username.trim()) return setError("Username is required.");
+    if (!email.trim()) return setError("Email is required.");
+    if (!pw) return setError("Password is required.");
+    if (!pwMatch) return setError("Passwords do not match.");
+    if (!phoneIsValid) return setError("Please enter a valid phone number.");
+
+    try {
+      setLoading(true);
+
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: pw,
+        options: {
+          data: {
+            // Supabase Auth UI “Display name” reads `full_name`/`name` from user_metadata.
+            full_name: username.trim(),
+            username: username.trim(),
+            country,
+            dial,
+            phone: fullPhone,
+          },
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      // Send user back to login (or you can route to /trade later after email confirmation)
+      router.push("/login?created=1");
+    } catch (err: any) {
+      setError(err?.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.shell}>
@@ -45,15 +106,32 @@ export default function SignupPage() {
             Sign up to get started with OPENBOOK.
           </p>
 
-          <div style={styles.form} className="ob-fadeUp ob-delay2">
+          <form style={styles.form} className="ob-fadeUp ob-delay2" onSubmit={handleSignup}>
             <label style={styles.label}>Country</label>
-            <select style={styles.select} value={country} onChange={(e) => onCountryChange(e.target.value)}>
+            <select
+              style={styles.select}
+              value={country}
+              onChange={(e) => onCountryChange(e.target.value)}
+              disabled={countries.length === 0}
+            >
+              {countries.length === 0 ? (
+                <option value="US">Loading countries…</option>
+              ) : null}
               {countries.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name} ({c.dial})
                 </option>
               ))}
             </select>
+
+            <label style={styles.label}>Username</label>
+            <input
+              style={styles.input}
+              placeholder="your username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+            />
 
             <label style={styles.label}>Phone number</label>
             <div style={styles.phoneRow}>
@@ -129,7 +207,11 @@ export default function SignupPage() {
               </div>
             ) : null}
 
-            <button style={styles.primaryBtn}>Create account</button>
+            {error ? <div style={styles.errorBox}>{error}</div> : null}
+
+            <button type="submit" style={{ ...styles.primaryBtn, opacity: loading ? 0.7 : 1 }} disabled={loading}>
+              {loading ? "Creating…" : "Create account"}
+            </button>
 
             <Link href="/login" style={styles.secondaryBtn}>
               ← Back to Login
@@ -139,7 +221,7 @@ export default function SignupPage() {
               By continuing, you agree to our <span style={styles.linkLike}>Terms</span> &{" "}
               <span style={styles.linkLike}>Privacy Policy</span>.
             </p>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -290,6 +372,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   hint: { fontSize: 13, opacity: 0.92, marginTop: 2 },
+  errorBox: {
+    border: "1px solid rgba(255,120,120,0.35)",
+    background: "rgba(255,80,80,0.10)",
+    color: "rgba(255,200,200,0.95)",
+    padding: "10px 12px",
+    borderRadius: 14,
+    fontSize: 13,
+    lineHeight: 1.35,
+  },
   primaryBtn: {
     width: "100%",
     height: 58,

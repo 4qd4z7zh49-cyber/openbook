@@ -1,12 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
+
+  const router = useRouter();
+  const params = useSearchParams();
+  const created = params.get("created");
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+
+  const createdMsg = useMemo(() => {
+    if (created === "1") return "Account created. Please log in.";
+    return "";
+  }, [created]);
+
+  async function handleLogin(e?: React.FormEvent) {
+    e?.preventDefault();
+    setError("");
+
+    if (!email.trim()) return setError("Email is required.");
+    if (!pw) return setError("Password is required.");
+
+    try {
+      setLoading(true);
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: pw,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      router.push("/trade");
+    } catch (err: any) {
+      setError(err?.message || "Login failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div style={styles.page}>
@@ -19,7 +60,7 @@ export default function LoginPage() {
             Welcome back to OPENBOOK.
           </p>
 
-          <div style={styles.form} className="ob-fadeUp ob-delay2">
+          <form style={styles.form} className="ob-fadeUp ob-delay2" onSubmit={handleLogin}>
             <label style={styles.label}>Email</label>
             <input
               style={styles.input}
@@ -49,7 +90,16 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <button style={styles.primaryBtn}>Login</button>
+            {createdMsg ? <div style={styles.infoBox}>{createdMsg}</div> : null}
+            {error ? <div style={styles.errorBox}>{error}</div> : null}
+
+            <button
+              type="submit"
+              style={{ ...styles.primaryBtn, opacity: loading ? 0.7 : 1 }}
+              disabled={loading}
+            >
+              {loading ? "Logging in…" : "Login"}
+            </button>
 
             <p style={styles.bottomText}>
               If you don’t have an account,{" "}
@@ -58,7 +108,7 @@ export default function LoginPage() {
               </Link>
               .
             </p>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -185,6 +235,24 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.85,
     fontSize: 14,
     lineHeight: 1.4,
+  },
+  infoBox: {
+    border: "1px solid rgba(120,190,255,0.25)",
+    background: "rgba(80,160,255,0.10)",
+    color: "rgba(215,240,255,0.95)",
+    padding: "10px 12px",
+    borderRadius: 14,
+    fontSize: 13,
+    lineHeight: 1.35,
+  },
+  errorBox: {
+    border: "1px solid rgba(255,120,120,0.35)",
+    background: "rgba(255,80,80,0.10)",
+    color: "rgba(255,200,200,0.95)",
+    padding: "10px 12px",
+    borderRadius: 14,
+    fontSize: 13,
+    lineHeight: 1.35,
   },
   linkLike: { color: "#6bd1ff", textDecoration: "underline" },
 };
