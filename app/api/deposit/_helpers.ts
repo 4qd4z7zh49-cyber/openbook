@@ -1,4 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  getSupabaseAnonKey,
+  getSupabaseServiceRoleKey,
+  getSupabaseUrl,
+} from "@/lib/supabaseEnv";
 
 export const ASSETS = ["USDT", "BTC", "ETH", "SOL", "XRP"] as const;
 export type Asset = (typeof ASSETS)[number];
@@ -16,8 +21,8 @@ type AdminRow = {
 
 function createUserClient(cookieHeader: string) {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAnonKey(),
     {
       global: {
         headers: cookieHeader ? { Cookie: cookieHeader } : {},
@@ -27,10 +32,7 @@ function createUserClient(cookieHeader: string) {
 }
 
 export function createServiceClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  return createClient(getSupabaseUrl(), getSupabaseServiceRoleKey());
 }
 
 export function emptyAddressMap(): AddressMap {

@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  getSupabaseAnonKey,
+  getSupabaseServiceRoleKey,
+  getSupabaseUrl,
+} from "@/lib/supabaseEnv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function createUserClient(cookieHeader: string) {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAnonKey(),
     {
       global: {
         headers: cookieHeader ? { Cookie: cookieHeader } : {},
@@ -17,10 +22,7 @@ function createUserClient(cookieHeader: string) {
 }
 
 function createServiceClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  return createClient(getSupabaseUrl(), getSupabaseServiceRoleKey());
 }
 
 function getBearerToken(req: Request) {
