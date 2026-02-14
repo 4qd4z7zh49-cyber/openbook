@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Asset } from "@/lib/walletStore";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 const ASSETS: Asset[] = ["USDT", "BTC", "ETH", "SOL", "XRP"];
 
@@ -128,10 +129,7 @@ export default function WalletPage() {
 
   const refreshWallet = useCallback(async () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
+      const headers = await getUserAuthHeaders();
       const res = await fetch("/api/wallet/state", {
         cache: "no-store",
         headers,
@@ -279,10 +277,8 @@ export default function WalletPage() {
 
     setExchangeLoading(true);
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers.Authorization = `Bearer ${token}`;
+      Object.assign(headers, await getUserAuthHeaders());
 
       const res = await fetch("/api/wallet/exchange", {
         method: "POST",

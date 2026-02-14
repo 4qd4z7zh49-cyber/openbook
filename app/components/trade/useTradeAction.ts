@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 export type Side = "BUY" | "SELL";
 
@@ -28,10 +28,7 @@ type AdjustResp = {
 };
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  return getUserAuthHeaders();
 }
 
 function loadOrders(): Order[] {

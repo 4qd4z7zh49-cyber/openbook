@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 type Theme = "dark" | "light";
 
@@ -213,11 +214,7 @@ export default function HomeBanner({
   const [notificationReadLoading, setNotificationReadLoading] = useState(false);
 
   const authHeaders = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
+    return getUserAuthHeaders();
   }, []);
 
   const refreshWallet = useCallback(async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 type Asset = "USDT" | "BTC" | "ETH" | "SOL" | "XRP";
 type AddressMap = Record<Asset, string>;
@@ -92,11 +92,7 @@ export default function DepositPage() {
   const [info, setInfo] = useState("");
 
   const authHeaders = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
+    return getUserAuthHeaders();
   }, []);
 
   const loadState = useCallback(async () => {

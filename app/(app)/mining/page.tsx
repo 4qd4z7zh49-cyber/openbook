@@ -8,7 +8,7 @@ import MiningPlanCard from "./components/MiningPlanCard";
 import MiningProgress from "./components/MiningProgress";
 
 import { purchaseMining, abortMining, getMiningOrders, type MiningOrder } from "@/lib/miningStore";
-import { supabase } from "@/lib/supabaseClient";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 const money = (n?: number | null) => {
   const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
@@ -94,10 +94,7 @@ export default function MiningPage() {
 
   async function reloadWalletUSDT() {
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
+      const headers = await getUserAuthHeaders();
       const r = await fetch("/api/wallet/state", {
         cache: "no-store",
         headers,

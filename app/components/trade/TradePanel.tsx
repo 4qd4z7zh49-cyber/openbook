@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
+import { getUserAuthHeaders, isUnauthorizedMessage } from "@/lib/clientAuth";
 
 type Side = "BUY" | "SELL";
 type TradeAsset = "BTC" | "ETH" | "GOLD" | "XRP" | "SOL";
@@ -180,10 +181,7 @@ function randomBetween(min: number, max: number) {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  return getUserAuthHeaders();
 }
 
 async function fetchWalletUSDT() {
@@ -318,6 +316,8 @@ function MiniLineChart({ points, side }: { points: number[]; side: Side }) {
 }
 
 export default function TradePanel() {
+  const router = useRouter();
+  const redirectedRef = useRef(false);
   const [balance, setBalance] = useState(0);
   const [balanceErr, setBalanceErr] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<TradeAsset>("BTC");
@@ -354,10 +354,14 @@ export default function TradePanel() {
       setPermissionErr("");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load trade state";
+      if (isUnauthorizedMessage(message) && !redirectedRef.current) {
+        redirectedRef.current = true;
+        router.replace("/login?next=/trade");
+      }
       if (message.toLowerCase().includes("wallet")) setBalanceErr(message);
       else setPermissionErr(message);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const run = () => {
@@ -525,6 +529,11 @@ export default function TradePanel() {
       } catch (e: unknown) {
         if (cancelled) return;
         const message = e instanceof Error ? e.message : "Auto settlement failed";
+        if (isUnauthorizedMessage(message) && !redirectedRef.current) {
+          redirectedRef.current = true;
+          router.replace("/login?next=/trade");
+          return;
+        }
         setActionErr(message);
       } finally {
         if (!cancelled) {
@@ -538,7 +547,7 @@ export default function TradePanel() {
     return () => {
       cancelled = true;
     };
-  }, [balance, session, sessionPhase]);
+  }, [balance, router, session, sessionPhase]);
 
   const startSession = (side: Side) => {
     setActionErr("");
@@ -658,6 +667,11 @@ export default function TradePanel() {
       );
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Claim failed";
+      if (isUnauthorizedMessage(message) && !redirectedRef.current) {
+        redirectedRef.current = true;
+        router.replace("/login?next=/trade");
+        return;
+      }
       setActionErr(message);
     } finally {
       setClaimLoading(false);
