@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import HomeBanner from "@components/HomeBanner";
 import FeatureGrid from "@components/FeatureGrid";
+import HomeNewsSection from "@components/HomeNewsSection";
 import TradingViewTape from "@components/TradingViewTape";
 
 type HomeTheme = "dark" | "light";
@@ -38,6 +39,7 @@ export default function HomePage() {
       />
       <TradingViewTape theme={theme} />
       <FeatureGrid />
+      <HomeNewsSection />
       <div className="homeBottomSpace" />
     </div>
   );
