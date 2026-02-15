@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import type { MiningPlan } from "@/lib/miningMock";
 import MiningProgress from "./MiningProgress";
 const money = (n?: number | null) => {
@@ -33,15 +34,13 @@ export default function MiningPlanCard({ plan, onPurchase, progress }: Props) {
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-xl bg-white/[0.06] border border-white/10 grid place-items-center">
-              {/* premium tiny icon */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  className="text-white/85"
-                />
-              </svg>
+              <Image
+                src="/openbook.png"
+                alt="Openbook logo"
+                width={18}
+                height={18}
+                className="h-[18px] w-[18px] rounded-sm object-cover"
+              />
             </div>
             <div className="text-white/70 text-xs">
               <div>Single limit</div>

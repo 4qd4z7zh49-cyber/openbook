@@ -510,6 +510,8 @@ export default function TradePanel() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionRestored, setSessionRestored] = useState(false);
   const sessionRef = useRef<TradeSession | null>(null);
+  const sessionCardRef = useRef<HTMLDivElement | null>(null);
+  const pendingSessionScrollRef = useRef(false);
   const autoSettledLossSessionIdRef = useRef("");
   const lastHistoryStorageKeyRef = useRef("");
   const tradeHistoryStorageKey = useMemo(() => tradeHistoryKeyForUser(currentUserId), [currentUserId]);
@@ -806,6 +808,24 @@ export default function TradePanel() {
   }, [sessionPhase]);
 
   useEffect(() => {
+    if (!session || sessionPhase !== "RUNNING") return;
+    if (!pendingSessionScrollRef.current) return;
+
+    pendingSessionScrollRef.current = false;
+    const node = sessionCardRef.current;
+    if (!node) return;
+
+    const rafId = window.requestAnimationFrame(() => {
+      node.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [session?.id, sessionPhase]);
+
+  useEffect(() => {
     if (sessionPhase !== "CLAIMABLE" || !session) return;
 
     const delta = round2(session.currentProfitUSDT);
@@ -978,6 +998,7 @@ export default function TradePanel() {
 
     setSession(newSession);
     sessionRef.current = newSession;
+    pendingSessionScrollRef.current = true;
     setSessionPhase("ANALYZING");
   };
 
@@ -1188,7 +1209,10 @@ export default function TradePanel() {
       </div>
 
       {session && summary && (
-        <div className="rounded-2xl border border-white/10 bg-neutral-950 p-4">
+        <div
+          ref={sessionCardRef}
+          className="rounded-2xl border border-white/10 bg-neutral-950 p-4"
+        >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm text-gray-300">
               Session: <b className="text-white">{summary.side}</b>
