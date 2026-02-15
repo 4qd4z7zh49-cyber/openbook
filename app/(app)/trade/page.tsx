@@ -1,44 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import TradeTabs from '@components/trade/TradeTabs';
 import TradeChart from '@components/trade/TradeChart';
 import TradePanel from '@components/trade/TradePanel';
 
-const HERO_LINES = ['AI Trade', 'Your profit within seconds'];
-
 export default function TradePage() {
   const [tab, setTab] = useState<'chart' | 'trade'>('trade');
-  const [heroIdx, setHeroIdx] = useState(0);
-  const [heroVisible, setHeroVisible] = useState(true);
-
-  useEffect(() => {
-    let fadeTimer = 0;
-    const rotate = window.setInterval(() => {
-      setHeroVisible(false);
-      fadeTimer = window.setTimeout(() => {
-        setHeroIdx((prev) => (prev + 1) % HERO_LINES.length);
-        setHeroVisible(true);
-      }, 260);
-    }, 2200);
-
-    return () => {
-      window.clearInterval(rotate);
-      if (fadeTimer) window.clearTimeout(fadeTimer);
-    };
-  }, []);
 
   return (
     <div className="mx-auto w-full max-w-[760px] space-y-3 px-3 pb-2 pt-4 text-white sm:px-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1
-          className={[
-            'min-h-[2rem] text-2xl font-bold transition-opacity duration-300',
-            heroVisible ? 'opacity-100' : 'opacity-10',
-          ].join(' ')}
-        >
-          {HERO_LINES[heroIdx]}
+        <h1 className="trade-light-sweep relative inline-block min-h-[2rem] text-2xl font-bold">
+          AI powered Trade
         </h1>
         <Link
           href="/wallet#exchange"
@@ -55,6 +30,35 @@ export default function TradePage() {
       ) : (
         <TradePanel />
       )}
+
+      <style jsx>{`
+        .trade-light-sweep {
+          color: rgba(255, 255, 255, 0.95);
+          background-image:
+            linear-gradient(
+              110deg,
+              rgba(255, 255, 255, 0.92) 0%,
+              rgba(255, 255, 255, 0.92) 35%,
+              rgba(186, 230, 253, 0.95) 50%,
+              rgba(255, 255, 255, 0.92) 65%,
+              rgba(255, 255, 255, 0.92) 100%
+            );
+          background-size: 220% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          animation: tradeSweep 3.2s linear infinite;
+        }
+
+        @keyframes tradeSweep {
+          0% {
+            background-position: 120% 50%;
+          }
+          100% {
+            background-position: -120% 50%;
+          }
+        }
+      `}</style>
     </div>
   );
 }

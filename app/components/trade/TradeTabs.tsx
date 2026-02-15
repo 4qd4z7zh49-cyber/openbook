@@ -9,7 +9,7 @@ export default function TradeTabs({
   setTab: (v: 'chart' | 'trade') => void;
 }) {
   const tabs: Array<{ key: 'trade' | 'chart'; label: string }> = [
-    { key: 'trade', label: 'AI Trade' },
+    { key: 'trade', label: 'AI powered Trade' },
     { key: 'chart', label: 'Chart' },
   ];
 

@@ -85,6 +85,19 @@ type TradeNotification = {
   updatedAt: number;
 };
 
+type TradeResultModalState = {
+  id: string;
+  side: Side;
+  asset: TradeAsset;
+  amountUSDT: number;
+  resultUSDT: number;
+  revealResult: boolean;
+  stageIndex: number;
+  claimed: boolean;
+  settlementDone: boolean;
+  settlementError: string;
+};
+
 type PersistedTradeSession = {
   phase: SessionPhase;
   session: TradeSession | null;
@@ -95,6 +108,11 @@ const ANALYSIS_TEXTS = [
   "Using AI for complicated trading...",
   "Collecting information across markets...",
   "Projecting trend and timing the move...",
+];
+const RESULT_STAGE_TEXTS = [
+  "Congratulations..",
+  "Collecting your profit...",
+  "Please wait to transfer money to your account",
 ];
 const QUANTITY_TIERS: QuantityTier[] = [
   { id: "q1", min: 300, max: 30_000, pct: 0.3 },
@@ -485,7 +503,7 @@ export default function TradePanel() {
   const [actionErr, setActionErr] = useState("");
   const [startLoading, setStartLoading] = useState<Side | "">("");
   const [claimLoading, setClaimLoading] = useState(false);
-  const [settlementInfo, setSettlementInfo] = useState("");
+  const [resultModal, setResultModal] = useState<TradeResultModalState | null>(null);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -496,12 +514,35 @@ export default function TradePanel() {
   const tradeHistoryStorageKey = useMemo(() => tradeHistoryKeyForUser(currentUserId), [currentUserId]);
   const tradeNotiStorageKey = useMemo(() => tradeNotiKeyForUser(currentUserId), [currentUserId]);
   const tradeSessionStorageKey = useMemo(() => tradeSessionKeyForUser(currentUserId), [currentUserId]);
+  const resultModalIsProfit = useMemo(
+    () => (resultModal ? resultModal.resultUSDT >= 0 : false),
+    [resultModal]
+  );
 
   const sessionBusy = sessionPhase === "ANALYZING" || sessionPhase === "RUNNING";
   const selectedTier = useMemo(
     () => QUANTITY_TIERS.find((t) => t.id === tierId) ?? QUANTITY_TIERS[0],
     [tierId]
   );
+
+  const openResultModalForSession = useCallback((row: TradeSession) => {
+    const finalResult = round2(row.currentProfitUSDT);
+    setResultModal((prev) => {
+      if (prev && prev.id === row.id) return prev;
+      return {
+        id: row.id,
+        side: row.side,
+        asset: row.asset,
+        amountUSDT: row.amountUSDT,
+        resultUSDT: finalResult,
+        revealResult: false,
+        stageIndex: 0,
+        claimed: false,
+        settlementDone: finalResult < 0 ? false : true,
+        settlementError: "",
+      };
+    });
+  }, []);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -634,6 +675,35 @@ export default function TradePanel() {
   }, [session, sessionPhase, sessionRestored, tradeSessionStorageKey]);
 
   useEffect(() => {
+    if (sessionPhase !== "CLAIMABLE" || !session) return;
+    openResultModalForSession(session);
+  }, [openResultModalForSession, session, sessionPhase]);
+
+  useEffect(() => {
+    if (!resultModal || resultModal.revealResult) return;
+
+    const rotate = window.setInterval(() => {
+      setResultModal((prev) =>
+        prev
+          ? {
+              ...prev,
+              stageIndex: (prev.stageIndex + 1) % RESULT_STAGE_TEXTS.length,
+            }
+          : prev
+      );
+    }, 1600);
+
+    const reveal = window.setTimeout(() => {
+      setResultModal((prev) => (prev ? { ...prev, revealResult: true } : prev));
+    }, 5_000);
+
+    return () => {
+      window.clearInterval(rotate);
+      window.clearTimeout(reveal);
+    };
+  }, [resultModal]);
+
+  useEffect(() => {
     if (sessionPhase !== "ANALYZING") return;
 
     setAnalysisIdx(0);
@@ -763,8 +833,10 @@ export default function TradePanel() {
           createdAt: session.createdAt,
           updatedAt: Date.now(),
         });
-        setSettlementInfo(
-          `Session ended with ${formatMoney(Math.abs(delta))} USDT loss. Deducted automatically.`
+        setResultModal((prev) =>
+          prev && prev.id === session.id
+            ? { ...prev, settlementDone: true, settlementError: "" }
+            : prev
         );
 
         setSession(null);
@@ -779,6 +851,11 @@ export default function TradePanel() {
           return;
         }
         setActionErr(message);
+        setResultModal((prev) =>
+          prev && prev.id === session.id
+            ? { ...prev, settlementDone: false, settlementError: message }
+            : prev
+        );
       } finally {
         if (!cancelled) {
           setClaimLoading(false);
@@ -795,7 +872,7 @@ export default function TradePanel() {
 
   const startSession = async (side: Side) => {
     setActionErr("");
-    setSettlementInfo("");
+    setResultModal(null);
     if (sessionBusy || sessionPhase === "CLAIMABLE") {
       setActionErr("Current session is still active. Claim or wait first.");
       return;
@@ -929,13 +1006,21 @@ export default function TradePanel() {
         createdAt: current.createdAt,
         updatedAt: Date.now(),
       });
+      setResultModal((prev) =>
+        prev && prev.id === current.id
+          ? {
+              ...prev,
+              claimed: true,
+              settlementDone: true,
+              settlementError: "",
+              revealResult: true,
+            }
+          : prev
+      );
 
       setSession(null);
       sessionRef.current = null;
       setSessionPhase("IDLE");
-      setSettlementInfo(
-        `Claimed ${delta >= 0 ? "+" : ""}${formatMoney(delta)} USDT and added to wallet.`
-      );
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Claim failed";
       if (isUnauthorizedMessage(message) && !redirectedRef.current) {
@@ -944,6 +1029,15 @@ export default function TradePanel() {
         return;
       }
       setActionErr(message);
+      setResultModal((prev) =>
+        prev && prev.id === current.id
+          ? {
+              ...prev,
+              settlementDone: false,
+              settlementError: message,
+            }
+          : prev
+      );
     } finally {
       setClaimLoading(false);
     }
@@ -976,6 +1070,15 @@ export default function TradePanel() {
     if (!Number.isFinite(currentAmount) || currentAmount < next.min || currentAmount > next.max) {
       setAmount(String(next.min));
     }
+  };
+
+  const closeResultModal = () => {
+    if (!resultModal) return;
+    if (resultModal.resultUSDT > 0 && !resultModal.claimed) {
+      setActionErr("Please claim profit before closing.");
+      return;
+    }
+    setResultModal(null);
   };
 
   return (
@@ -1105,37 +1208,9 @@ export default function TradePanel() {
         </div>
       )}
 
-      {sessionPhase === "CLAIMABLE" && session && session.currentProfitUSDT >= 0 ? (
-        <div className="rounded-2xl border border-yellow-400/40 bg-yellow-400/10 p-4">
-          <div className="text-lg font-semibold text-white">Claim your profit</div>
-          <div className="mt-2 text-sm text-white/80">
-            Session finished. Final result:
-            {" "}
-            <b className={session.currentProfitUSDT >= 0 ? "text-emerald-300" : "text-rose-300"}>
-              {session.currentProfitUSDT >= 0 ? "+" : ""}
-              {formatMoney(session.currentProfitUSDT)} USDT
-            </b>
-          </div>
-          <button
-            type="button"
-            onClick={claimProfit}
-            disabled={claimLoading}
-            className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
-          >
-            {claimLoading ? "Claiming..." : "Claim Profit"}
-          </button>
-        </div>
-      ) : null}
-
       {!!actionErr && (
         <div className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
           {actionErr}
-        </div>
-      )}
-
-      {!!settlementInfo && (
-        <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
-          {settlementInfo}
         </div>
       )}
 
@@ -1172,10 +1247,98 @@ export default function TradePanel() {
         )}
       </div>
 
+      {resultModal ? (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/75 px-4 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-white/15 bg-[radial-gradient(circle_at_20%_10%,rgba(37,99,235,.25),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(16,185,129,.18),transparent_45%),#06070c] p-5 shadow-[0_30px_120px_rgba(0,0,0,.72)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-white/50">AI powered trade</div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {resultModalIsProfit ? "Trade Completed" : "Trade Settled"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeResultModal}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4">
+              {!resultModal.revealResult ? (
+                <div className="space-y-4">
+                  <div className="min-h-[52px] text-center text-lg font-semibold text-white transition-opacity duration-300">
+                    {RESULT_STAGE_TEXTS[resultModal.stageIndex]}
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full w-full animate-pulse bg-gradient-to-r from-blue-400/70 via-cyan-300/80 to-emerald-300/70" />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 text-center">
+                  <div className="text-xs uppercase tracking-[0.2em] text-white/60">
+                    {resultModalIsProfit ? "Final Profit" : "Final Loss"}
+                  </div>
+                  <div
+                    className={[
+                      "text-5xl font-black tracking-tight",
+                      resultModal.resultUSDT >= 0 ? "text-emerald-300" : "text-rose-300",
+                    ].join(" ")}
+                  >
+                    {resultModal.resultUSDT >= 0 ? "+" : ""}
+                    {formatMoney(resultModal.resultUSDT)}
+                    <span className="ml-2 text-2xl font-semibold text-white/70">USDT</span>
+                  </div>
+
+                  <div className="text-sm text-white/60">
+                    {resultModal.side} · {resultModal.asset} · {formatMoney(resultModal.amountUSDT)} USDT
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {resultModal.revealResult ? (
+              <div className="mt-4 space-y-3">
+                {resultModal.settlementError ? (
+                  <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+                    {resultModal.settlementError}
+                  </div>
+                ) : null}
+
+                {resultModalIsProfit ? (
+                  <>
+                    {!resultModal.claimed ? (
+                      <button
+                        type="button"
+                        onClick={claimProfit}
+                        disabled={claimLoading}
+                        className="w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-[0_12px_30px_rgba(37,99,235,.45)] disabled:opacity-60"
+                      >
+                        {claimLoading ? "Claiming..." : "Claim Profit"}
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-200">
+                        Profit transferred to your wallet successfully.
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-200">
+                    {resultModal.settlementDone ? "Loss has been deducted from wallet." : "Settling loss..."}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {sessionPhase === "ANALYZING" ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-sm">
           <div className="w-[92%] max-w-md rounded-2xl border border-white/15 bg-[#0b0b0f] p-5 shadow-[0_20px_70px_rgba(0,0,0,.65)]">
-            <div className="text-sm text-white/60">AI Trade Session</div>
+            <div className="text-sm text-white/60">AI powered Trade Session</div>
             <div
               className={[
                 "mt-3 text-lg font-semibold text-white transition-opacity duration-400",
