@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 const ASSETS: Asset[] = ["USDT", "BTC", "ETH", "SOL", "XRP"];
+const WALLET_CACHE_KEY_PREFIX = "openbookpro.wallet.cache.v1";
 
 type PriceMap = Record<Asset, number | null>;
 type BalanceMap = Record<Asset, number>;
@@ -35,6 +36,15 @@ type ExchangeResponse = {
   receivedAmount?: number;
   fromAsset?: Asset;
   toAsset?: Asset;
+};
+
+type WalletCachePayload = {
+  balances: BalanceMap;
+  prices: PriceMap;
+  fromAsset: Asset;
+  toAsset: Asset;
+  exchangeAmount: string;
+  lastSync: number | null;
 };
 
 const DEFAULT_BALANCES: BalanceMap = {
@@ -68,6 +78,54 @@ function fmtMoney(value: number) {
   });
 }
 
+function walletCacheKeyForUser(userId: string | null | undefined) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  return `${WALLET_CACHE_KEY_PREFIX}.${id}`;
+}
+
+function loadWalletCache(storageKey: string): WalletCachePayload | null {
+  if (!storageKey) return null;
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WalletCachePayload>;
+    const balances = parsed.balances || DEFAULT_BALANCES;
+    const prices = parsed.prices || DEFAULT_PRICES;
+    const fromAsset = ASSETS.includes(parsed.fromAsset as Asset) ? (parsed.fromAsset as Asset) : "USDT";
+    const toAsset = ASSETS.includes(parsed.toAsset as Asset) ? (parsed.toAsset as Asset) : "BTC";
+    return {
+      balances: {
+        USDT: Number(balances.USDT ?? 0),
+        BTC: Number(balances.BTC ?? 0),
+        ETH: Number(balances.ETH ?? 0),
+        SOL: Number(balances.SOL ?? 0),
+        XRP: Number(balances.XRP ?? 0),
+      },
+      prices: {
+        USDT: Number(prices.USDT ?? 1),
+        BTC: typeof prices.BTC === "number" ? Number(prices.BTC) : null,
+        ETH: typeof prices.ETH === "number" ? Number(prices.ETH) : null,
+        SOL: typeof prices.SOL === "number" ? Number(prices.SOL) : null,
+        XRP: typeof prices.XRP === "number" ? Number(prices.XRP) : null,
+      },
+      fromAsset,
+      toAsset: toAsset === fromAsset ? (ASSETS.find((a) => a !== fromAsset) ?? "BTC") : toAsset,
+      exchangeAmount: String(parsed.exchangeAmount || ""),
+      lastSync: typeof parsed.lastSync === "number" ? parsed.lastSync : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveWalletCache(storageKey: string, payload: WalletCachePayload) {
+  if (!storageKey) return;
+  if (typeof window === "undefined") return;
+  localStorage.setItem(storageKey, JSON.stringify(payload));
+}
+
 export default function WalletPage() {
   const router = useRouter();
   const redirectedRef = useRef(false);
@@ -84,6 +142,9 @@ export default function WalletPage() {
   const [exchangeLoading, setExchangeLoading] = useState(false);
   const [exchangeErr, setExchangeErr] = useState("");
   const [exchangeInfo, setExchangeInfo] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+
+  const walletCacheKey = useMemo(() => walletCacheKeyForUser(currentUserId), [currentUserId]);
 
   const applyHoldings = useCallback(
     (holdings?: Partial<Record<Asset | string, number>>) => {
@@ -100,6 +161,37 @@ export default function WalletPage() {
     },
     []
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (cancelled) return;
+        const uid = String(data.user?.id || "");
+        if (uid) setCurrentUserId(uid);
+      } catch {
+        // ignore
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!walletCacheKey) return;
+    const cached = loadWalletCache(walletCacheKey);
+    if (!cached) return;
+
+    setBalances(cached.balances);
+    setPrices(cached.prices);
+    setFromAsset(cached.fromAsset);
+    setToAsset(cached.toAsset);
+    setExchangeAmount(cached.exchangeAmount);
+    if (cached.lastSync) setLastSync(cached.lastSync);
+  }, [walletCacheKey]);
 
   const refreshWalletFromClient = useCallback(async () => {
     const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -214,6 +306,18 @@ export default function WalletPage() {
     }, 15_000);
     return () => window.clearInterval(t);
   }, [refreshPrices]);
+
+  useEffect(() => {
+    if (!walletCacheKey) return;
+    saveWalletCache(walletCacheKey, {
+      balances,
+      prices,
+      fromAsset,
+      toAsset,
+      exchangeAmount,
+      lastSync,
+    });
+  }, [balances, prices, fromAsset, toAsset, exchangeAmount, lastSync, walletCacheKey]);
 
   const rows = useMemo(
     () =>
@@ -342,9 +446,23 @@ export default function WalletPage() {
           <div className="text-sm text-white/60">Estimated Total (USDT)</div>
           <div className="mt-1 text-3xl font-semibold text-white">{fmtMoney(totalUsdt)}</div>
           <div className="mt-2 text-xs text-white/50">Last sync: {lastSyncText}</div>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Link
+              href="/deposit"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+            >
+              Deposit
+            </Link>
+            <Link
+              href="/withdraw"
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              Withdraw
+            </Link>
+          </div>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <section id="exchange" className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="text-sm font-semibold text-white">Coin Exchange</div>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -428,23 +546,6 @@ export default function WalletPage() {
               {exchangeInfo}
             </div>
           ) : null}
-        </section>
-
-        <section className="rounded-2xl border border-blue-400/20 bg-gradient-to-br from-blue-500/10 to-cyan-400/5 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-white">Withdraw Funds</div>
-              <div className="mt-1 text-xs text-white/60">
-                Submit your withdraw amount and destination wallet address.
-              </div>
-            </div>
-            <Link
-              href="/withdraw"
-              className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 sm:w-auto"
-            >
-              Go to Withdraw
-            </Link>
-          </div>
         </section>
 
         {walletErr ? (

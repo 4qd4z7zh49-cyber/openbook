@@ -69,6 +69,7 @@ type HistoryRecord = {
 
 const HISTORY_KEY_PREFIX = "openbookpro.trade.history.v3";
 const TRADE_NOTI_KEY_PREFIX = "openbookpro.trade.notifications.v2";
+const TRADE_SESSION_KEY_PREFIX = "openbookpro.trade.session.v1";
 
 type TradeNotificationStatus = "PENDING" | "CONFIRMED";
 
@@ -82,6 +83,12 @@ type TradeNotification = {
   profitUSDT: number | null;
   createdAt: number;
   updatedAt: number;
+};
+
+type PersistedTradeSession = {
+  phase: SessionPhase;
+  session: TradeSession | null;
+  savedAt: number;
 };
 
 const ANALYSIS_TEXTS = [
@@ -149,6 +156,12 @@ function tradeNotiKeyForUser(userId: string | null | undefined) {
   return `${TRADE_NOTI_KEY_PREFIX}.${id}`;
 }
 
+function tradeSessionKeyForUser(userId: string | null | undefined) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  return `${TRADE_SESSION_KEY_PREFIX}.${id}`;
+}
+
 function loadTradeNotifications(storageKey: string): TradeNotification[] {
   if (!storageKey) return [];
   if (typeof window === "undefined") return [];
@@ -189,6 +202,84 @@ function upsertTradeNotification(storageKey: string, next: TradeNotification) {
   if (idx >= 0) rows[idx] = next;
   else rows.unshift(next);
   localStorage.setItem(storageKey, JSON.stringify(rows.slice(0, 300)));
+}
+
+function normalizeTradeSession(v: unknown): TradeSession | null {
+  if (!v || typeof v !== "object") return null;
+  const row = v as Partial<TradeSession>;
+  const side: Side = row.side === "SELL" ? "SELL" : "BUY";
+  const asset = normalizeAsset(row.asset);
+  const amountUSDT = Number(row.amountUSDT ?? 0);
+  const tierPct = Number(row.tierPct ?? 0);
+  const runStartedAt = Number(row.runStartedAt ?? 0);
+  const endAt = Number(row.endAt ?? 0);
+  const createdAt = Number(row.createdAt ?? 0);
+
+  if (
+    !Number.isFinite(amountUSDT) ||
+    amountUSDT <= 0 ||
+    !Number.isFinite(tierPct) ||
+    tierPct <= 0 ||
+    !Number.isFinite(runStartedAt) ||
+    runStartedAt <= 0 ||
+    !Number.isFinite(endAt) ||
+    endAt <= runStartedAt
+  ) {
+    return null;
+  }
+
+  const points = Array.isArray(row.points)
+    ? row.points.map((p) => Number(p)).filter((p) => Number.isFinite(p)).slice(-80)
+    : [];
+
+  return {
+    id: String(row.id || crypto.randomUUID()),
+    side,
+    asset,
+    amountUSDT,
+    tierId: String(row.tierId || "q1"),
+    tierLabel: String(row.tierLabel || ""),
+    tierPct,
+    permissionEnabled: Boolean(row.permissionEnabled),
+    targetProfitUSDT: Number(row.targetProfitUSDT ?? 0),
+    currentProfitUSDT: Number(row.currentProfitUSDT ?? 0),
+    createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
+    runStartedAt,
+    endAt,
+    remainingSec: Math.max(0, Number(row.remainingSec ?? 0)),
+    points: points.length > 1 ? points : [100, side === "BUY" ? 100.7 : 99.3],
+  };
+}
+
+function loadPersistedTradeSession(storageKey: string): PersistedTradeSession | null {
+  if (!storageKey) return null;
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedTradeSession>;
+    const phase = String(parsed.phase || "").toUpperCase();
+    const session = normalizeTradeSession(parsed.session);
+    if (!session) return null;
+    if (phase !== "ANALYZING" && phase !== "RUNNING" && phase !== "CLAIMABLE") return null;
+    return {
+      phase: phase as SessionPhase,
+      session,
+      savedAt: Number(parsed.savedAt ?? Date.now()),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedTradeSession(storageKey: string, payload: PersistedTradeSession | null) {
+  if (!storageKey) return;
+  if (typeof window === "undefined") return;
+  if (!payload || !payload.session) {
+    localStorage.removeItem(storageKey);
+    return;
+  }
+  localStorage.setItem(storageKey, JSON.stringify(payload));
 }
 
 function round2(v: number) {
@@ -398,11 +489,13 @@ export default function TradePanel() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [sessionRestored, setSessionRestored] = useState(false);
   const sessionRef = useRef<TradeSession | null>(null);
   const autoSettledLossSessionIdRef = useRef("");
   const lastHistoryStorageKeyRef = useRef("");
   const tradeHistoryStorageKey = useMemo(() => tradeHistoryKeyForUser(currentUserId), [currentUserId]);
   const tradeNotiStorageKey = useMemo(() => tradeNotiKeyForUser(currentUserId), [currentUserId]);
+  const tradeSessionStorageKey = useMemo(() => tradeSessionKeyForUser(currentUserId), [currentUserId]);
 
   const sessionBusy = sessionPhase === "ANALYZING" || sessionPhase === "RUNNING";
   const selectedTier = useMemo(
@@ -485,6 +578,60 @@ export default function TradePanel() {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    if (!tradeSessionStorageKey) {
+      setSessionRestored(false);
+      return;
+    }
+
+    // Current in-memory session takes priority (e.g. started before user id resolved)
+    if (sessionRef.current) {
+      setSessionRestored(true);
+      return;
+    }
+
+    const persisted = loadPersistedTradeSession(tradeSessionStorageKey);
+    if (!persisted?.session) {
+      setSessionRestored(true);
+      return;
+    }
+
+    const restored = persisted.session;
+    const now = Date.now();
+    let nextPhase: SessionPhase = "ANALYZING";
+
+    if (now >= restored.endAt) {
+      nextPhase = "CLAIMABLE";
+      restored.currentProfitUSDT = round2(restored.targetProfitUSDT);
+      restored.remainingSec = 0;
+    } else if (now >= restored.runStartedAt) {
+      nextPhase = "RUNNING";
+      restored.remainingSec = Math.max(0, Math.ceil((restored.endAt - now) / 1000));
+    } else {
+      nextPhase = "ANALYZING";
+      restored.remainingSec = Math.max(0, Math.ceil((restored.endAt - restored.runStartedAt) / 1000));
+    }
+
+    sessionRef.current = restored;
+    setSession(restored);
+    setSessionPhase(nextPhase);
+    setSessionRestored(true);
+  }, [tradeSessionStorageKey]);
+
+  useEffect(() => {
+    if (!sessionRestored) return;
+    savePersistedTradeSession(
+      tradeSessionStorageKey,
+      session && sessionPhase !== "IDLE"
+        ? {
+            phase: sessionPhase,
+            session,
+            savedAt: Date.now(),
+          }
+        : null
+    );
+  }, [session, sessionPhase, sessionRestored, tradeSessionStorageKey]);
 
   useEffect(() => {
     if (sessionPhase !== "ANALYZING") return;

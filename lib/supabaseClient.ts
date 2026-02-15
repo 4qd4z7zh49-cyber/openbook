@@ -27,7 +27,14 @@ export function getSupabaseClient() {
     return null as unknown as SupabaseClient;
   }
 
-  _client = createClient(env.url, env.key);
+  _client = createClient(env.url, env.key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: "openbookpro.auth.session",
+    },
+  });
   return _client;
 }
 

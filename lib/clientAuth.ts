@@ -17,23 +17,31 @@ function normalizeClientAuthError(error: unknown) {
 
 export async function getUserAccessToken() {
   try {
-    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-    if (sessionErr) throw sessionErr;
+    const readToken = async () => {
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      let token = sessionData.session?.access_token || "";
+      if (token) return token;
 
-    let token = sessionData.session?.access_token || "";
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      if (!refreshErr) {
+        token = refreshed.session?.access_token || "";
+        if (token) return token;
+      }
+
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData.user) return "";
+
+      const { data: latest } = await supabase.auth.getSession();
+      return latest.session?.access_token || "";
+    };
+
+    const token = await readToken();
     if (token) return token;
 
-    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-    if (!refreshErr) {
-      token = refreshed.session?.access_token || "";
-      if (token) return token;
-    }
-
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData.user) return "";
-
-    const { data: latest } = await supabase.auth.getSession();
-    return latest.session?.access_token || "";
+    // Browser restore race: wait a bit and retry once.
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    return await readToken();
   } catch (error) {
     throw normalizeClientAuthError(error);
   }
