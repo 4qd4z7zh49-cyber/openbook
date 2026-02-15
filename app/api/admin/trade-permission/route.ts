@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession, supabaseAdmin, assertCanManageUser } from "../_helpers";
-import { getPermissionsForUsers, setPermissionForUser } from "@/lib/tradePermissionStore";
+import {
+  getPermissionsForUsers,
+  setPermissionForUser,
+  type TradePermissionMode,
+} from "@/lib/tradePermissionStore";
 
 type UpdateBody = {
   userId?: string;
-  buyEnabled?: boolean;
-  sellEnabled?: boolean;
+  permissionMode?: TradePermissionMode;
 };
 
 function parseBody(v: unknown): UpdateBody {
@@ -14,6 +17,21 @@ function parseBody(v: unknown): UpdateBody {
 }
 
 export const dynamic = "force-dynamic";
+
+const ALLOWED_MODES: readonly TradePermissionMode[] = [
+  "BUY_ALL_WIN",
+  "SELL_ALL_WIN",
+  "RANDOM_WIN_LOSS",
+  "ALL_LOSS",
+];
+
+function normalizeMode(v: unknown): TradePermissionMode | "" {
+  const raw = String(v || "").trim().toUpperCase();
+  if ((ALLOWED_MODES as readonly string[]).includes(raw)) {
+    return raw as TradePermissionMode;
+  }
+  return "";
+}
 
 export async function GET(req: Request) {
   const auth = requireAdminSession(req);
@@ -40,8 +58,9 @@ export async function GET(req: Request) {
     const users = (profiles ?? []).map((p) => {
       const uid = String(p.id);
       const perm = permissionMap[uid] ?? {
-        buyEnabled: true,
-        sellEnabled: true,
+        permissionMode: "ALL_LOSS" as const,
+        buyEnabled: false,
+        sellEnabled: false,
         source: "default" as const,
       };
 
@@ -49,6 +68,7 @@ export async function GET(req: Request) {
         id: uid,
         username: p.username ?? null,
         email: p.email ?? null,
+        permissionMode: perm.permissionMode,
         buyEnabled: perm.buyEnabled,
         sellEnabled: perm.sellEnabled,
         source: perm.source,
@@ -71,24 +91,23 @@ export async function POST(req: Request) {
   try {
     const body = parseBody(await req.json().catch(() => null));
     const userId = String(body.userId || "").trim();
-    const buyEnabled = Boolean(body.buyEnabled);
-    const sellEnabled = Boolean(body.sellEnabled);
+    const permissionMode = normalizeMode(body.permissionMode);
 
-    if (!userId) {
-      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
+    if (!userId || !permissionMode) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const ok = await assertCanManageUser(adminId, role, userId);
     if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const permission = await setPermissionForUser(supabaseAdmin, userId, {
-      buyEnabled,
-      sellEnabled,
+      permissionMode,
     });
 
     return NextResponse.json({
       ok: true,
       userId,
+      permissionMode: permission.permissionMode,
       buyEnabled: permission.buyEnabled,
       sellEnabled: permission.sellEnabled,
       source: permission.source,

@@ -60,6 +60,7 @@ export async function GET(req: Request) {
         {
           error: "Your account is restricted",
           restricted: true,
+          permissionMode: "ALL_LOSS",
           buyEnabled: false,
           sellEnabled: false,
         },
@@ -71,6 +72,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      permissionMode: permission.permissionMode,
       buyEnabled: permission.buyEnabled,
       sellEnabled: permission.sellEnabled,
       source: permission.source,

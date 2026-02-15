@@ -7,10 +7,12 @@ import { supabase } from "@/lib/supabaseClient";
 
 type Side = "BUY" | "SELL";
 type TradeAsset = "BTC" | "ETH" | "GOLD" | "XRP" | "SOL";
+type TradePermissionMode = "BUY_ALL_WIN" | "SELL_ALL_WIN" | "RANDOM_WIN_LOSS" | "ALL_LOSS";
 
 type TradePermissionResponse = {
   ok?: boolean;
   error?: string;
+  permissionMode?: TradePermissionMode;
   buyEnabled?: boolean;
   sellEnabled?: boolean;
   restricted?: boolean;
@@ -197,14 +199,39 @@ function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
+function modeFromLegacyBuySell(buyEnabled: boolean, sellEnabled: boolean): TradePermissionMode {
+  if (buyEnabled && !sellEnabled) return "BUY_ALL_WIN";
+  if (!buyEnabled && sellEnabled) return "SELL_ALL_WIN";
+  if (buyEnabled && sellEnabled) return "RANDOM_WIN_LOSS";
+  return "ALL_LOSS";
+}
+
+function normalizePermissionMode(v: unknown): TradePermissionMode {
+  const raw = String(v || "").trim().toUpperCase();
+  if (raw === "BUY_ALL_WIN" || raw === "SELL_ALL_WIN" || raw === "RANDOM_WIN_LOSS" || raw === "ALL_LOSS") {
+    return raw as TradePermissionMode;
+  }
+  return "ALL_LOSS";
+}
+
+function resolveSessionWinMode(mode: TradePermissionMode, side: Side) {
+  if (mode === "BUY_ALL_WIN") return side === "BUY";
+  if (mode === "SELL_ALL_WIN") return side === "SELL";
+  if (mode === "RANDOM_WIN_LOSS") {
+    // Losses are more common than wins.
+    return Math.random() < 0.28;
+  }
+  return false;
+}
+
 function buildTargetPct({
   tierPct,
-  permissionEnabled,
+  shouldWin,
 }: {
   tierPct: number;
-  permissionEnabled: boolean;
+  shouldWin: boolean;
 }) {
-  if (permissionEnabled) {
+  if (shouldWin) {
     // Profit mode: keep result close to selected tier %
     return tierPct * randomBetween(0.97, 1.03);
   }
@@ -234,17 +261,19 @@ async function fetchTradePermission() {
   const json = (await res.json().catch(() => ({}))) as TradePermissionResponse;
   if (res.status === 403 && json?.restricted) {
     return {
-      buyEnabled: false,
-      sellEnabled: false,
+      permissionMode: "ALL_LOSS" as TradePermissionMode,
       restricted: true,
     };
   }
   if (!res.ok || !json?.ok) {
     throw new Error(json?.error || "Failed to load trade permission");
   }
+  const mode = normalizePermissionMode(
+    json.permissionMode ??
+      modeFromLegacyBuySell(Boolean(json.buyEnabled ?? false), Boolean(json.sellEnabled ?? false))
+  );
   return {
-    buyEnabled: Boolean(json.buyEnabled ?? true),
-    sellEnabled: Boolean(json.sellEnabled ?? true),
+    permissionMode: mode,
     restricted: Boolean(json.restricted ?? false),
   };
 }
@@ -353,7 +382,7 @@ export default function TradePanel() {
   const [balance, setBalance] = useState(0);
   const [balanceErr, setBalanceErr] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<TradeAsset>("BTC");
-  const [permission, setPermission] = useState({ buyEnabled: true, sellEnabled: true });
+  const [permissionMode, setPermissionMode] = useState<TradePermissionMode>("ALL_LOSS");
   const [tradeRestricted, setTradeRestricted] = useState(false);
   const [permissionErr, setPermissionErr] = useState("");
   const [amount, setAmount] = useState("300");
@@ -385,7 +414,7 @@ export default function TradePanel() {
     try {
       const [wallet, perm] = await Promise.all([fetchWalletUSDT(), fetchTradePermission()]);
       setBalance(wallet);
-      setPermission({ buyEnabled: perm.buyEnabled, sellEnabled: perm.sellEnabled });
+      setPermissionMode(perm.permissionMode);
       setTradeRestricted(Boolean(perm.restricted));
       setBalanceErr("");
       setPermissionErr("");
@@ -641,14 +670,14 @@ export default function TradePanel() {
       return;
     }
 
-    let latestPermission = permission;
+    let latestPermissionMode = permissionMode;
     let latestRestricted = tradeRestricted;
     setStartLoading(side);
     try {
       const fresh = await fetchTradePermission();
-      latestPermission = { buyEnabled: fresh.buyEnabled, sellEnabled: fresh.sellEnabled };
+      latestPermissionMode = fresh.permissionMode;
       latestRestricted = Boolean(fresh.restricted);
-      setPermission(latestPermission);
+      setPermissionMode(latestPermissionMode);
       setTradeRestricted(latestRestricted);
       setPermissionErr("");
     } catch (e: unknown) {
@@ -674,10 +703,10 @@ export default function TradePanel() {
     const runStartedAt = now + 5_000;
     const endAt = runStartedAt + 40_000;
 
-    const permissionEnabled = side === "BUY" ? latestPermission.buyEnabled : latestPermission.sellEnabled;
+    const permissionEnabled = resolveSessionWinMode(latestPermissionMode, side);
     const targetPct = buildTargetPct({
       tierPct: selectedTier.pct,
-      permissionEnabled,
+      shouldWin: permissionEnabled,
     });
 
     const newSession: TradeSession = {

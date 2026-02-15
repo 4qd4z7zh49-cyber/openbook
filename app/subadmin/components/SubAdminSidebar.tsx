@@ -18,7 +18,7 @@ const items: Item[] = [
   { key: "overview", label: "Overview" },
   { key: "topups", label: "Topups" },
   { key: "mining", label: "Mining" },
-  { key: "orders", label: "Orders" },
+  { key: "orders", label: "Trade Permission" },
   { key: "withdraw", label: "Withdraw" },
   { key: "notify", label: "Notify" },
   { key: "support", label: "Support" },

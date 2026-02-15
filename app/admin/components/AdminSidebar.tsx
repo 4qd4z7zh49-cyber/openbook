@@ -120,7 +120,7 @@ export default function AdminSidebar() {
       {item("Users", tab === "users", () => goTab("users"))}
       {item("Topups", tab === "topups", () => goTab("topups"), pendingDepositCount)}
       {item("Mining Pending", tab === "mining", () => goTab("mining"))}
-      {item("Orders", tab === "orders", () => goTab("orders"))}
+      {item("Trade Permission", tab === "orders", () => goTab("orders"))}
       {item("Withdraw", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
       {item("Notify", tab === "notify", () => goTab("notify"), pendingNotifyCount)}
       {item("Support", tab === "support", () => goTab("support"), pendingSupportCount)}

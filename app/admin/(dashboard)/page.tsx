@@ -9,6 +9,7 @@ import SupportChatPanel from "../components/SupportChatPanel";
 
 type Asset = "USDT" | "BTC" | "ETH" | "SOL" | "XRP";
 type TopupMode = "ADD" | "SUBTRACT";
+type TradePermissionMode = "BUY_ALL_WIN" | "SELL_ALL_WIN" | "RANDOM_WIN_LOSS" | "ALL_LOSS";
 const ASSETS: Asset[] = ["USDT", "BTC", "ETH", "SOL", "XRP"];
 
 type UserRow = {
@@ -55,6 +56,7 @@ type TradePermissionUser = {
   id: string;
   username?: string | null;
   email?: string | null;
+  permissionMode?: TradePermissionMode;
   buyEnabled?: boolean;
   sellEnabled?: boolean;
   source?: "db" | "memory" | "default";
@@ -68,6 +70,7 @@ type TradePermissionListResponse = {
 type TradePermissionUpdateResponse = {
   ok?: boolean;
   error?: string;
+  permissionMode?: TradePermissionMode;
   buyEnabled?: boolean;
   sellEnabled?: boolean;
 };
@@ -148,6 +151,35 @@ function emptyAddressMap(): AddressMap {
     SOL: "",
     XRP: "",
   };
+}
+
+const PERMISSION_MODE_OPTIONS: Array<{ value: TradePermissionMode; label: string }> = [
+  { value: "BUY_ALL_WIN", label: "Buy all win" },
+  { value: "SELL_ALL_WIN", label: "Sell all win" },
+  { value: "RANDOM_WIN_LOSS", label: "All random win/loss" },
+  { value: "ALL_LOSS", label: "All loss" },
+];
+
+function normalizePermissionMode(v: unknown): TradePermissionMode {
+  const raw = String(v || "").toUpperCase().trim();
+  if (raw === "BUY_ALL_WIN" || raw === "SELL_ALL_WIN" || raw === "RANDOM_WIN_LOSS" || raw === "ALL_LOSS") {
+    return raw as TradePermissionMode;
+  }
+  return "ALL_LOSS";
+}
+
+function permissionModeLabel(mode: TradePermissionMode) {
+  if (mode === "BUY_ALL_WIN") return "Buy all win";
+  if (mode === "SELL_ALL_WIN") return "Sell all win";
+  if (mode === "RANDOM_WIN_LOSS") return "All random win/loss";
+  return "All loss";
+}
+
+function permissionSessionLabel(mode: TradePermissionMode) {
+  if (mode === "BUY_ALL_WIN") return "BUY win / SELL loss";
+  if (mode === "SELL_ALL_WIN") return "SELL win / BUY loss";
+  if (mode === "RANDOM_WIN_LOSS") return "Random (loss-heavy)";
+  return "BUY+SELL loss";
 }
 
 export default function AdminPage() {
@@ -350,7 +382,11 @@ export default function AdminPage() {
     });
     const j = await readJson<TradePermissionListResponse>(r);
     if (!r.ok) throw new Error(j?.error || "Failed to load trade permissions");
-    return Array.isArray(j?.users) ? j.users : [];
+    const rows = Array.isArray(j?.users) ? j.users : [];
+    return rows.map((u) => ({
+      ...u,
+      permissionMode: normalizePermissionMode(u.permissionMode),
+    }));
   }
 
   async function reloadPermissionUsers() {
@@ -367,26 +403,26 @@ export default function AdminPage() {
     }
   }
 
-  async function savePermission(userId: string, buyEnabled: boolean, sellEnabled: boolean) {
+  async function savePermission(userId: string, permissionMode: TradePermissionMode) {
     setPermissionSavingUserId(userId);
     setPermissionErr("");
     try {
       const r = await fetch("/api/admin/trade-permission", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, buyEnabled, sellEnabled }),
+        body: JSON.stringify({ userId, permissionMode }),
       });
       const j = await readJson<TradePermissionUpdateResponse>(r);
       if (!r.ok || !j?.ok) {
         throw new Error(j?.error || "Failed to save permission");
       }
+      const savedMode = normalizePermissionMode(j?.permissionMode || permissionMode);
       setPermissionUsers((prev) =>
         prev.map((u) =>
           u.id === userId
             ? {
                 ...u,
-                buyEnabled,
-                sellEnabled,
+                permissionMode: savedMode,
               }
             : u
         )
@@ -1086,7 +1122,7 @@ export default function AdminPage() {
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
         <div className="mb-4 text-xl font-semibold">Trade Permissions</div>
         <div className="mb-4 text-sm text-white/60">
-          Control whether each user can press BUY/SELL in trade session.
+          Select a trade permission mode per user.
         </div>
 
         {permissionLoading ? <div className="text-white/60">Loading...</div> : null}
@@ -1099,8 +1135,8 @@ export default function AdminPage() {
                 <tr className="text-left text-white/60">
                   <th className="py-3">USER</th>
                   <th className="py-3">EMAIL</th>
-                  <th className="py-3 text-center">BUY</th>
-                  <th className="py-3 text-center">SELL</th>
+                  <th className="py-3">SESSION</th>
+                  <th className="py-3">PERMISSION</th>
                   <th className="py-3 text-right">ACTION</th>
                 </tr>
               </thead>
@@ -1108,57 +1144,41 @@ export default function AdminPage() {
                 {permissionUsers.map((u) => (
                   <tr key={u.id} className="border-t border-white/10">
                     <td className="py-3">{u.username ?? "-"}</td>
-                    <td className="py-3">{u.email ?? "-"}</td>
-                    <td className="py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPermissionUsers((prev) =>
-                            prev.map((x) =>
-                              x.id === u.id ? { ...x, buyEnabled: !Boolean(x.buyEnabled) } : x
-                            )
-                          )
-                        }
-                        className={[
-                          "rounded-xl px-3 py-2 text-xs font-semibold border",
-                          u.buyEnabled
-                            ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200"
-                            : "border-white/10 bg-black/30 text-white/70",
-                        ].join(" ")}
-                      >
-                        {u.buyEnabled ? "Enabled" : "Disabled"}
-                      </button>
+                    <td className="py-3">
+                      <div>{u.email ?? "-"}</div>
+                      <div className="mt-1 text-xs text-white/45">
+                        {permissionModeLabel(normalizePermissionMode(u.permissionMode))}
+                      </div>
                     </td>
-                    <td className="py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() =>
+                    <td className="py-3">
+                      <span className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-white/80">
+                        {permissionSessionLabel(normalizePermissionMode(u.permissionMode))}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <select
+                        value={normalizePermissionMode(u.permissionMode)}
+                        onChange={(e) => {
+                          const mode = normalizePermissionMode(e.target.value);
                           setPermissionUsers((prev) =>
-                            prev.map((x) =>
-                              x.id === u.id ? { ...x, sellEnabled: !Boolean(x.sellEnabled) } : x
-                            )
-                          )
-                        }
-                        className={[
-                          "rounded-xl px-3 py-2 text-xs font-semibold border",
-                          u.sellEnabled
-                            ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200"
-                            : "border-white/10 bg-black/30 text-white/70",
-                        ].join(" ")}
+                            prev.map((x) => (x.id === u.id ? { ...x, permissionMode: mode } : x))
+                          );
+                        }}
+                        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                       >
-                        {u.sellEnabled ? "Enabled" : "Disabled"}
-                      </button>
+                        {PERMISSION_MODE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="py-3 text-right">
                       <button
                         type="button"
                         disabled={permissionSavingUserId === u.id}
                         onClick={() =>
-                          void savePermission(
-                            u.id,
-                            Boolean(u.buyEnabled),
-                            Boolean(u.sellEnabled)
-                          )
+                          void savePermission(u.id, normalizePermissionMode(u.permissionMode))
                         }
                         className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                       >
