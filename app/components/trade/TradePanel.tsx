@@ -114,6 +114,7 @@ const RESULT_STAGE_TEXTS = [
   "Collecting your profit...",
   "Please wait to transfer money to your account",
 ];
+const RESULT_REVEAL_DELAY_MS = 2400;
 const QUANTITY_TIERS: QuantityTier[] = [
   { id: "q1", min: 300, max: 30_000, pct: 0.3 },
   { id: "q2", min: 30_000, max: 80_000, pct: 0.4 },
@@ -682,26 +683,38 @@ export default function TradePanel() {
   useEffect(() => {
     if (!resultModal || resultModal.revealResult) return;
 
+    const modalId = resultModal.id;
+
     const rotate = window.setInterval(() => {
       setResultModal((prev) =>
-        prev
+        prev && prev.id === modalId
           ? {
               ...prev,
-              stageIndex: (prev.stageIndex + 1) % RESULT_STAGE_TEXTS.length,
+              stageIndex: Math.min(prev.stageIndex + 1, RESULT_STAGE_TEXTS.length - 1),
             }
           : prev
       );
-    }, 1600);
+    }, 900);
 
+    // Show loader briefly, then reveal final profit/loss.
     const reveal = window.setTimeout(() => {
-      setResultModal((prev) => (prev ? { ...prev, revealResult: true } : prev));
-    }, 5_000);
+      window.clearInterval(rotate);
+      setResultModal((prev) =>
+        prev && prev.id === modalId
+          ? {
+              ...prev,
+              revealResult: true,
+              stageIndex: RESULT_STAGE_TEXTS.length - 1,
+            }
+          : prev
+      );
+    }, RESULT_REVEAL_DELAY_MS);
 
     return () => {
       window.clearInterval(rotate);
       window.clearTimeout(reveal);
     };
-  }, [resultModal]);
+  }, [resultModal?.id, resultModal?.revealResult]);
 
   useEffect(() => {
     if (sessionPhase !== "ANALYZING") return;
@@ -1273,7 +1286,15 @@ export default function TradePanel() {
                     {RESULT_STAGE_TEXTS[resultModal.stageIndex]}
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full w-full animate-pulse bg-gradient-to-r from-blue-400/70 via-cyan-300/80 to-emerald-300/70" />
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-400/70 via-cyan-300/80 to-emerald-300/70 transition-[width] duration-500"
+                      style={{
+                        width: `${Math.max(
+                          20,
+                          ((resultModal.stageIndex + 1) / RESULT_STAGE_TEXTS.length) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
               ) : (
@@ -1325,8 +1346,17 @@ export default function TradePanel() {
                     )}
                   </>
                 ) : (
-                  <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-200">
-                    {resultModal.settlementDone ? "Loss has been deducted from wallet." : "Settling loss..."}
+                  <div className="space-y-2">
+                    <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-200">
+                      {resultModal.settlementDone ? "Loss has been deducted from wallet." : "Settling loss..."}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeResultModal}
+                      className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-base font-semibold text-white hover:bg-white/15"
+                    >
+                      Close
+                    </button>
                   </div>
                 )}
               </div>
