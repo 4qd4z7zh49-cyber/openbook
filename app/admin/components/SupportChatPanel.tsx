@@ -41,11 +41,26 @@ type SupportListResponse = {
   messages?: SupportMessage[];
 };
 
+type UserRow = {
+  id: string;
+  username?: string | null;
+  email?: string | null;
+};
+
+type UsersResp = {
+  users?: UserRow[];
+  error?: string;
+};
+
 type SupportSendResponse = {
   ok?: boolean;
   error?: string;
   pendingCount?: number;
   message?: SupportMessage;
+  thread?: {
+    id: string;
+    userId?: string | null;
+  };
 };
 
 async function readJson<T>(res: Response): Promise<T> {
@@ -93,10 +108,14 @@ async function fileToDataUrl(file: File) {
 
 export default function SupportChatPanel() {
   const [threads, setThreads] = useState<SupportThread[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
+  const [composeUserId, setComposeUserId] = useState("");
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersErr, setUsersErr] = useState("");
   const [listErr, setListErr] = useState("");
   const [draft, setDraft] = useState("");
   const [sendLoading, setSendLoading] = useState(false);
@@ -108,20 +127,61 @@ export default function SupportChatPanel() {
   const [previewImageName, setPreviewImageName] = useState("");
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const activeThreadIdRef = useRef("");
+  const loadSeqRef = useRef(0);
+  const focusUserIdRef = useRef("");
+  const prevThreadRef = useRef("");
+  const prevMessageCountRef = useRef(0);
 
   const activeThread = useMemo(
     () => threads.find((row) => row.id === activeThreadId) || null,
     [threads, activeThreadId]
   );
 
-  const loadData = useCallback(async (threadId?: string) => {
-    setLoading(true);
+  const hasExistingThreadForComposeUser = useMemo(() => {
+    if (!composeUserId) return false;
+    return threads.some((t) => t.userId === composeUserId);
+  }, [composeUserId, threads]);
+
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    setUsersErr("");
+    try {
+      const r = await fetch("/api/admin/users", {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const j = await readJson<UsersResp>(r);
+      if (!r.ok) {
+        throw new Error(j?.error || "Failed to load users");
+      }
+      const nextUsers = Array.isArray(j.users) ? j.users : [];
+      setUsers(nextUsers);
+      setComposeUserId((prev) => prev || nextUsers[0]?.id || "");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to load users";
+      setUsersErr(message);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  const loadData = useCallback(async (opts?: { threadId?: string; userId?: string; silent?: boolean }) => {
+    const threadId = String(opts?.threadId || "");
+    const directUserId = String(opts?.userId || "");
+    const silent = Boolean(opts?.silent);
+    const seq = ++loadSeqRef.current;
+    if (!silent) {
+      setLoading(true);
+    }
     setListErr("");
     try {
       const params = new URLSearchParams();
       params.set("limit", "250");
-      const target = threadId || activeThreadId;
+      const target = threadId || activeThreadIdRef.current;
       if (target) params.set("threadId", target);
+      const targetUserId = directUserId || (target ? "" : focusUserIdRef.current);
+      if (targetUserId) params.set("userId", targetUserId);
 
       const r = await fetch(`/api/admin/support?${params.toString()}`, {
         cache: "no-store",
@@ -131,6 +191,7 @@ export default function SupportChatPanel() {
       if (!r.ok || !j?.ok) {
         throw new Error(j?.error || "Failed to load support chats");
       }
+      if (seq !== loadSeqRef.current) return;
 
       const nextThreads = Array.isArray(j.threads) ? j.threads : [];
       const nextMessages = Array.isArray(j.messages) ? j.messages : [];
@@ -140,25 +201,34 @@ export default function SupportChatPanel() {
       setMessages(nextMessages);
       setPendingCount(Number(j.pendingCount ?? 0));
       setActiveThreadId((prev) => {
-        if (nextActive) return nextActive;
+        if (threadId && nextThreads.some((row) => row.id === threadId)) return threadId;
         if (prev && nextThreads.some((row) => row.id === prev)) return prev;
+        if (nextActive && nextThreads.some((row) => row.id === nextActive)) return nextActive;
         return nextThreads[0]?.id || "";
       });
     } catch (e: unknown) {
+      if (seq !== loadSeqRef.current) return;
       const message = e instanceof Error ? e.message : "Failed to load support chats";
       setListErr(message);
     } finally {
-      setLoading(false);
+      if (!silent && seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
+  }, []);
+
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
   }, [activeThreadId]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    void loadUsers();
+  }, [loadData, loadUsers]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void loadData();
+      void loadData({ silent: true });
     }, 3000);
     return () => window.clearInterval(timer);
   }, [loadData]);
@@ -166,8 +236,18 @@ export default function SupportChatPanel() {
   useEffect(() => {
     const node = bodyRef.current;
     if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [messages, activeThreadId]);
+
+    const threadChanged = prevThreadRef.current !== activeThreadId;
+    const countIncreased = messages.length > prevMessageCountRef.current;
+    const nearBottom = node.scrollHeight - (node.scrollTop + node.clientHeight) < 80;
+
+    if (threadChanged || countIncreased || nearBottom) {
+      node.scrollTop = node.scrollHeight;
+    }
+
+    prevThreadRef.current = activeThreadId;
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length, activeThreadId]);
 
   useEffect(() => {
     const closeMenu = () => setImageMenuId("");
@@ -175,10 +255,43 @@ export default function SupportChatPanel() {
     return () => document.removeEventListener("click", closeMenu);
   }, []);
 
+  useEffect(() => {
+    if (!activeThread) return;
+    setComposeUserId(activeThread.userId);
+  }, [activeThread]);
+
+  useEffect(() => {
+    if (!users.length) {
+      setComposeUserId("");
+      return;
+    }
+    if (composeUserId && users.some((u) => u.id === composeUserId)) return;
+    setComposeUserId(users[0].id);
+  }, [users, composeUserId]);
+
   const selectThread = (threadId: string) => {
+    if (!threadId) return;
+    focusUserIdRef.current = "";
     setActiveThreadId(threadId);
+    activeThreadIdRef.current = threadId;
     setSendErr("");
-    void loadData(threadId);
+    setImageMenuId("");
+    void loadData({ threadId, silent: true });
+  };
+
+  const openOrPrepareUserChat = () => {
+    if (!composeUserId) return;
+    const existing = threads.find((row) => row.userId === composeUserId);
+    if (existing) {
+      selectThread(existing.id);
+      return;
+    }
+    focusUserIdRef.current = composeUserId;
+    setActiveThreadId("");
+    activeThreadIdRef.current = "";
+    setMessages([]);
+    setSendErr("");
+    void loadData({ userId: composeUserId, silent: true });
   };
 
   const onPickPhoto = () => {
@@ -215,8 +328,11 @@ export default function SupportChatPanel() {
 
   const onSend = async () => {
     const message = draft.trim();
-    if (!activeThreadId) {
-      setSendErr("Choose a chat first");
+    const targetThreadId = String(activeThreadIdRef.current || "");
+    const targetUserId = String(composeUserId || activeThread?.userId || "");
+
+    if (!targetThreadId && !targetUserId) {
+      setSendErr("Choose a user first");
       return;
     }
     if (!message && !pickedImageDataUrl) {
@@ -236,7 +352,8 @@ export default function SupportChatPanel() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          threadId: activeThreadId,
+          threadId: targetThreadId || undefined,
+          userId: targetThreadId ? undefined : targetUserId,
           message,
           imageDataUrl: pickedImageDataUrl || undefined,
         }),
@@ -249,25 +366,24 @@ export default function SupportChatPanel() {
       setDraft("");
       clearPhoto();
       setPendingCount(Number(j.pendingCount ?? pendingCount));
-      setMessages((prev) => [...prev, j.message as SupportMessage]);
-      setThreads((prev) =>
-        prev.map((row) =>
-          row.id === activeThreadId
-            ? {
-                ...row,
-                lastSender: "ADMIN",
-                lastMessageAt: (j.message as SupportMessage).createdAt,
-                needsReply: false,
-              }
-            : row
-        )
-      );
+      const nextThreadId = String(j.thread?.id || targetThreadId || "");
+      if (nextThreadId) {
+        focusUserIdRef.current = "";
+        setActiveThreadId(nextThreadId);
+        activeThreadIdRef.current = nextThreadId;
+      }
+      if (nextThreadId && j.message) {
+        setMessages((prev) => [...prev, j.message as SupportMessage]);
+      }
     } catch (e: unknown) {
       const messageText = e instanceof Error ? e.message : "Failed to send message";
       setSendErr(messageText);
     } finally {
       setSendLoading(false);
-      void loadData(activeThreadId);
+      void loadData({
+        threadId: String(activeThreadIdRef.current || ""),
+        silent: true,
+      });
     }
   };
 
@@ -327,6 +443,38 @@ export default function SupportChatPanel() {
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/60">Start / send to user</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                value={composeUserId}
+                onChange={(e) => setComposeUserId(e.target.value)}
+                className="min-w-[230px] flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+              >
+                {users.length === 0 ? (
+                  <option value="" className="bg-[#101216] text-white">
+                    No users found
+                  </option>
+                ) : null}
+                {users.map((u) => (
+                  <option key={u.id} value={u.id} className="bg-[#101216] text-white">
+                    {(u.username || "User") + (u.email ? ` (${u.email})` : "")}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={openOrPrepareUserChat}
+                disabled={!composeUserId}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/90 hover:bg-white/10 disabled:opacity-60"
+              >
+                {hasExistingThreadForComposeUser ? "Open Chat" : "Start New Chat"}
+              </button>
+            </div>
+            {usersLoading ? <div className="mt-2 text-xs text-white/50">Loading users...</div> : null}
+            {usersErr ? <div className="mt-2 text-xs text-red-300">{usersErr}</div> : null}
+          </div>
+
           {activeThread ? (
             <>
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-3">
@@ -515,8 +663,8 @@ export default function SupportChatPanel() {
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/60">
-              Select a user conversation to start chatting.
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/70">
+              No opened thread. Choose a user above and send a message to create a new chat.
             </div>
           )}
         </div>

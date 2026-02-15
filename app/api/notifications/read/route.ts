@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 type Body = {
   notificationId?: string;
+  source?: string;
+  sourceId?: string;
 };
 
 function parseBody(value: unknown): Body {
@@ -22,9 +24,33 @@ export async function POST(req: Request) {
     }
 
     const body = parseBody(await req.json().catch(() => null));
-    const notificationId = String(body.notificationId || "").trim();
-    if (!notificationId) {
-      return NextResponse.json({ error: "notificationId is required" }, { status: 400 });
+    const source = String(body.source || "NOTIFY").trim().toUpperCase();
+    const sourceId = String(body.sourceId || body.notificationId || "").trim();
+
+    if (!sourceId) {
+      return NextResponse.json({ error: "sourceId is required" }, { status: 400 });
+    }
+
+    if (source === "SUPPORT") {
+      const { data, error } = await svc
+        .from("support_threads")
+        .update({
+          last_sender: "USER",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", sourceId)
+        .eq("user_id", userId)
+        .eq("last_sender", "ADMIN")
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        updated: Boolean(data?.id),
+      });
     }
 
     const { data, error } = await svc
@@ -33,7 +59,7 @@ export async function POST(req: Request) {
         status: "CONFIRMED",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", notificationId)
+      .eq("id", sourceId)
       .eq("user_id", userId)
       .eq("status", "PENDING")
       .select("id,status")

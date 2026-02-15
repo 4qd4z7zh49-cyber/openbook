@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { buildCountryOptions } from "../_lib/countries";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -50,13 +50,48 @@ export default function SignupPage() {
     if (found) setDial(found.dial);
   }
 
-  const fullPhone = `${dial}${phoneLocal.replace(/[^\d]/g, "")}`;
+  const localDigits = useMemo(() => phoneLocal.replace(/[^\d]/g, ""), [phoneLocal]);
+  const normalizedDial = useMemo(() => {
+    const dialDigits = dial.replace(/[^\d]/g, "");
+    return dialDigits ? `+${dialDigits}` : "";
+  }, [dial]);
 
-  const phoneIsValid = useMemo(() => {
-    if (!phoneLocal.trim()) return false;
-    const parsed = parsePhoneNumberFromString(fullPhone);
-    return Boolean(parsed && parsed.isValid());
-  }, [fullPhone, phoneLocal]);
+  const phoneCheck = useMemo(() => {
+    if (!localDigits) {
+      return {
+        valid: false,
+        e164: "",
+        reason: "empty" as const,
+      };
+    }
+
+    const parsed = parsePhoneNumberFromString(localDigits, country as CountryCode);
+    if (!parsed || !parsed.isValid()) {
+      return {
+        valid: false,
+        e164: "",
+        reason: "invalid_number" as const,
+      };
+    }
+
+    const parsedDial = `+${parsed.countryCallingCode}`;
+    if (normalizedDial && parsedDial !== normalizedDial) {
+      return {
+        valid: false,
+        e164: "",
+        reason: "dial_mismatch" as const,
+      };
+    }
+
+    return {
+      valid: true,
+      e164: parsed.number,
+      reason: "ok" as const,
+    };
+  }, [country, localDigits, normalizedDial]);
+
+  const fullPhone = phoneCheck.e164 || `${normalizedDial}${localDigits}`;
+  const phoneIsValid = phoneCheck.valid;
 
   const pwMatch = pw.length > 0 && pw === pw2;
 
@@ -201,7 +236,11 @@ async function handleSignup(e?: FormEvent) {
                   color: phoneIsValid ? "rgba(120,255,190,0.92)" : "rgba(255,140,140,0.92)",
                 }}
               >
-                {phoneIsValid ? "Phone number looks valid." : "Phone number is not valid."}
+                {phoneIsValid
+                  ? "Phone number looks valid."
+                  : phoneCheck.reason === "dial_mismatch"
+                    ? "Country code and phone number do not match."
+                    : "Phone number is not valid."}
               </div>
             ) : null}
 

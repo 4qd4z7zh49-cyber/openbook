@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type NotificationStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "FROZEN";
-type NotificationSource = "DEPOSIT" | "MINING" | "WITHDRAW" | "NOTIFY";
+type NotificationSource = "DEPOSIT" | "MINING" | "WITHDRAW" | "NOTIFY" | "SUPPORT";
 
 type NotificationItem = {
   id: string;
@@ -50,6 +50,15 @@ type NotifyRow = {
   subject: string | null;
   message: string | null;
   status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type SupportRow = {
+  id: string;
+  status: string | null;
+  last_sender: string | null;
+  last_message_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -220,6 +229,32 @@ function mapNotifyRows(rows: NotifyRow[]): NotificationItem[] {
   });
 }
 
+function mapSupportRows(rows: SupportRow[]): NotificationItem[] {
+  return rows.flatMap((row) => {
+    const threadStatus = String(row.status || "").toUpperCase();
+    const lastSender = String(row.last_sender || "").toUpperCase();
+    const isPending = threadStatus === "OPEN" && lastSender === "ADMIN";
+    const isClosedByAdmin = threadStatus === "CLOSED" && lastSender === "ADMIN";
+    if (!isPending && !isClosedByAdmin) return [];
+    const status: NotificationStatus = isPending ? "PENDING" : "CONFIRMED";
+
+    const fullText = isPending
+      ? "You have a new reply from client support. Open Support to continue."
+      : "Your support ticket was closed. You can open Support to send a new message.";
+
+    return [{
+      id: String(row.id),
+      source: "SUPPORT",
+      status,
+      title: isPending ? "Support Reply" : "Support Updated",
+      detail: preview(fullText),
+      fullText,
+      createdAt: String(row.last_message_at || row.updated_at || row.created_at || ""),
+      rawStatus: `${threadStatus}:${lastSender}`,
+    }];
+  });
+}
+
 export async function GET(req: Request) {
   try {
     const svc = createServiceClient();
@@ -228,7 +263,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const [depRes, miningRes, withdrawRes, notifyRes] = await Promise.all([
+    const [depRes, miningRes, withdrawRes, notifyRes, supportRes] = await Promise.all([
       svc
         .from("deposit_history")
         .select("id,asset,amount,status,created_at")
@@ -253,6 +288,12 @@ export async function GET(req: Request) {
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(80),
+      svc
+        .from("support_threads")
+        .select("id,status,last_sender,last_message_at,created_at,updated_at")
+        .eq("user_id", userId)
+        .order("last_message_at", { ascending: false })
+        .limit(20),
     ]);
 
     if (depRes.error) {
@@ -267,12 +308,16 @@ export async function GET(req: Request) {
     if (notifyRes.error && !isMissingTableError(notifyRes.error)) {
       return NextResponse.json({ error: notifyRes.error.message }, { status: 500 });
     }
+    if (supportRes.error && !isMissingTableError(supportRes.error)) {
+      return NextResponse.json({ error: supportRes.error.message }, { status: 500 });
+    }
 
     const items = [
       ...mapDepositRows((depRes.data || []) as DepositRow[]),
       ...mapMiningRows((miningRes.data || []) as MiningRow[]),
       ...mapWithdrawRows((withdrawRes.data || []) as WithdrawRow[]),
       ...mapNotifyRows((notifyRes.data || []) as NotifyRow[]),
+      ...mapSupportRows((supportRes.data || []) as SupportRow[]),
     ]
       .sort((a, b) => toTs(b.createdAt) - toTs(a.createdAt))
       .slice(0, 120);

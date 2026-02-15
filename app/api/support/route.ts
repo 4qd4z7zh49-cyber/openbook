@@ -129,7 +129,28 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const thread = await ensureThread(userId);
+    let thread = await ensureThread(userId);
+
+    // Mark latest admin reply as seen when user opens support page.
+    if (normalizeThreadStatus(thread.status) === "OPEN" && normalizeSender(thread.last_sender) === "ADMIN") {
+      const now = new Date().toISOString();
+      const { error: seenErr } = await svc
+        .from("support_threads")
+        .update({
+          last_sender: "USER",
+          updated_at: now,
+        })
+        .eq("id", thread.id)
+        .eq("user_id", userId);
+      if (!seenErr) {
+        thread = {
+          ...thread,
+          last_sender: "USER",
+          updated_at: now,
+        };
+      }
+    }
+
     const { data: rows, error } = await svc
       .from("support_messages")
       .select(

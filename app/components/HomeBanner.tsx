@@ -38,7 +38,7 @@ type ProfileResp = {
 };
 
 type NotificationStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "FROZEN";
-type NotificationSource = "TRADE" | "MINING" | "DEPOSIT" | "WITHDRAW" | "NOTIFY";
+type NotificationSource = "TRADE" | "MINING" | "DEPOSIT" | "WITHDRAW" | "NOTIFY" | "SUPPORT";
 
 type NotificationItem = {
   id: string;
@@ -114,7 +114,14 @@ function normalizeNotificationStatus(v: unknown): NotificationStatus {
 
 function normalizeNotificationSource(v: unknown): NotificationSource {
   const s = String(v || "").toUpperCase();
-  if (s === "TRADE" || s === "MINING" || s === "DEPOSIT" || s === "WITHDRAW" || s === "NOTIFY") {
+  if (
+    s === "TRADE" ||
+    s === "MINING" ||
+    s === "DEPOSIT" ||
+    s === "WITHDRAW" ||
+    s === "NOTIFY" ||
+    s === "SUPPORT"
+  ) {
     return s as NotificationSource;
   }
   return "DEPOSIT";
@@ -188,6 +195,7 @@ function sourceLabel(source: NotificationSource) {
   if (source === "MINING") return "Mining";
   if (source === "WITHDRAW") return "Withdraw";
   if (source === "NOTIFY") return "Notify";
+  if (source === "SUPPORT") return "Support";
   return "Trade";
 }
 
@@ -325,7 +333,7 @@ export default function HomeBanner({
   }, [refreshNotifications]);
 
   const markNotificationRead = useCallback(
-    async (notificationId: string) => {
+    async (notificationId: string, source: NotificationSource = "NOTIFY") => {
       const id = String(notificationId || "").trim();
       if (!id) return;
       setNotificationReadLoading(true);
@@ -335,7 +343,10 @@ export default function HomeBanner({
         const r = await fetch("/api/notifications/read", {
           method: "POST",
           headers,
-          body: JSON.stringify({ notificationId: id }),
+          body: JSON.stringify({
+            source,
+            sourceId: id,
+          }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j?.ok) {
@@ -356,8 +367,12 @@ export default function HomeBanner({
     async (item: NotificationItem) => {
       setSelectedNotification(item);
       setNotificationOpen(false);
-      if (item.source === "NOTIFY" && item.status === "PENDING" && item.sourceId) {
-        await markNotificationRead(item.sourceId);
+      if (
+        (item.source === "NOTIFY" || item.source === "SUPPORT") &&
+        item.status === "PENDING" &&
+        item.sourceId
+      ) {
+        await markNotificationRead(item.sourceId, item.source);
       }
     },
     [markNotificationRead]
@@ -822,7 +837,8 @@ export default function HomeBanner({
               {selectedNotification.fullText || selectedNotification.detail}
             </div>
 
-            {notificationReadLoading && selectedNotification.source === "NOTIFY" ? (
+            {notificationReadLoading &&
+            (selectedNotification.source === "NOTIFY" || selectedNotification.source === "SUPPORT") ? (
               <div className={theme === "light" ? "mt-3 text-xs text-slate-500" : "mt-3 text-xs text-white/60"}>
                 Marking as read...
               </div>

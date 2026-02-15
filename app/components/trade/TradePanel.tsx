@@ -87,11 +87,11 @@ const ANALYSIS_TEXTS = [
   "Projecting trend and timing the move...",
 ];
 const QUANTITY_TIERS: QuantityTier[] = [
-  { id: "q1", min: 300, max: 10_000, pct: 0.3 },
-  { id: "q2", min: 10_000, max: 30_000, pct: 0.4 },
-  { id: "q3", min: 30_000, max: 50_000, pct: 0.6 },
-  { id: "q4", min: 50_000, max: 100_000, pct: 0.8 },
-  { id: "q5", min: 100_000, max: 99_999_999, pct: 1.0 },
+  { id: "q1", min: 300, max: 30_000, pct: 0.3 },
+  { id: "q2", min: 30_000, max: 80_000, pct: 0.4 },
+  { id: "q3", min: 80_000, max: 150_000, pct: 0.6 },
+  { id: "q4", min: 150_000, max: 300_000, pct: 0.8 },
+  { id: "q5", min: 300_000, max: 9_999_999, pct: 1.0 },
 ];
 const TRADE_ASSETS: TradeAsset[] = ["BTC", "ETH", "GOLD", "XRP", "SOL"];
 
@@ -178,6 +178,21 @@ function round2(v: number) {
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
+}
+
+function buildTargetPct({
+  tierPct,
+  permissionEnabled,
+}: {
+  tierPct: number;
+  permissionEnabled: boolean;
+}) {
+  if (permissionEnabled) {
+    // Profit mode: keep result close to selected tier %
+    return tierPct * randomBetween(0.97, 1.03);
+  }
+  // Loss mode: always negative and slightly varied for natural behavior
+  return -tierPct * randomBetween(0.9, 1.06);
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -610,8 +625,10 @@ export default function TradePanel() {
     const endAt = runStartedAt + 40_000;
 
     const permissionEnabled = side === "BUY" ? latestPermission.buyEnabled : latestPermission.sellEnabled;
-    const sign = permissionEnabled ? 1 : -1;
-    const targetPct = sign * selectedTier.pct * randomBetween(0.92, 1.08);
+    const targetPct = buildTargetPct({
+      tierPct: selectedTier.pct,
+      permissionEnabled,
+    });
 
     const newSession: TradeSession = {
       id: crypto.randomUUID(),
@@ -742,7 +759,7 @@ export default function TradePanel() {
           <span>Wallet Balance (USDT)</span>
           <b className="shrink-0 text-white">{formatMoney(balance)}</b>
         </div>
-        <div className="mt-3 text-sm text-gray-300">Choose your asset</div>
+        <div className="mt-3 text-sm text-gray-300">Choose asset to trade</div>
         <select
           value={selectedAsset}
           onChange={(e) => setSelectedAsset(normalizeAsset(e.target.value))}
