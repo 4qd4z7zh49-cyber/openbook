@@ -62,6 +62,26 @@ function fmtWhen(value: string) {
   return d.toLocaleTimeString();
 }
 
+function statusLabel(status: ThreadStatus) {
+  return status === "OPEN" ? "Active" : "Closed";
+}
+
+function messageImageName(message: SupportMessage) {
+  const ts = new Date(message.createdAt || Date.now()).getTime();
+  return `openbookpro-support-${Number.isFinite(ts) ? ts : Date.now()}.png`;
+}
+
+function downloadImage(url: string, name: string) {
+  if (!url) return;
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -83,6 +103,9 @@ export default function SupportChatPanel() {
   const [sendErr, setSendErr] = useState("");
   const [pickedImageDataUrl, setPickedImageDataUrl] = useState("");
   const [pickedImageName, setPickedImageName] = useState("");
+  const [imageMenuId, setImageMenuId] = useState("");
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageName, setPreviewImageName] = useState("");
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -145,6 +168,12 @@ export default function SupportChatPanel() {
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [messages, activeThreadId]);
+
+  useEffect(() => {
+    const closeMenu = () => setImageMenuId("");
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, []);
 
   const selectThread = (threadId: string) => {
     setActiveThreadId(threadId);
@@ -254,11 +283,11 @@ export default function SupportChatPanel() {
 
       {listErr ? <div className="mb-3 text-sm text-red-300">{listErr}</div> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 text-sm font-semibold text-white">User Conversations</div>
 
-          <div className="max-h-[560px] space-y-2 overflow-auto pr-1">
+          <div className="max-h-[65vh] space-y-2 overflow-auto pr-1">
             {threads.map((thread) => {
               const active = thread.id === activeThreadId;
               return (
@@ -308,13 +337,16 @@ export default function SupportChatPanel() {
                   <div className="text-sm text-white/60">{activeThread.email || "-"}</div>
                 </div>
                 <div className="text-right text-xs text-white/60">
-                  <div>Status: {activeThread.status}</div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                    {statusLabel(activeThread.status)}
+                  </div>
+                  <div className="mt-1 text-white/45">Reply within working hours</div>
                 </div>
               </div>
 
               <div
                 ref={bodyRef}
-                className="max-h-[430px] space-y-3 overflow-auto rounded-xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_rgba(17,24,39,0.85)_40%,_rgba(10,10,14,1)_80%)] p-3"
+                className="max-h-[56vh] space-y-3 overflow-auto rounded-xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_rgba(17,24,39,0.85)_40%,_rgba(10,10,14,1)_80%)] p-3"
               >
                 {messages.map((row) => {
                   const mine = row.senderRole === "ADMIN";
@@ -339,11 +371,62 @@ export default function SupportChatPanel() {
                         />
 
                         {row.messageType === "IMAGE" && row.imageUrl ? (
-                          <img
-                            src={row.imageUrl}
-                            alt="chat image"
-                            className="mb-2 max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
-                          />
+                          <div className="relative mb-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setImageMenuId((prev) => (prev === row.id ? "" : row.id));
+                              }}
+                              className="absolute right-2 top-2 z-10 rounded-lg border border-black/25 bg-black/45 px-2 py-0.5 text-xs text-white/90"
+                            >
+                              ...
+                            </button>
+
+                            {imageMenuId === row.id ? (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-2 top-9 z-20 w-32 overflow-hidden rounded-lg border border-white/20 bg-[#111827] text-xs text-white shadow-[0_14px_30px_rgba(0,0,0,0.45)]"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewImageUrl(row.imageUrl || "");
+                                    setPreviewImageName(messageImageName(row));
+                                    setImageMenuId("");
+                                  }}
+                                  className="block w-full px-3 py-2 text-left hover:bg-white/10"
+                                >
+                                  Preview
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    downloadImage(row.imageUrl || "", messageImageName(row));
+                                    setImageMenuId("");
+                                  }}
+                                  className="block w-full px-3 py-2 text-left hover:bg-white/10"
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            ) : null}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewImageUrl(row.imageUrl || "");
+                                setPreviewImageName(messageImageName(row));
+                              }}
+                              className="block rounded-xl"
+                            >
+                              <img
+                                src={row.imageUrl}
+                                alt="chat image"
+                                className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
+                              />
+                            </button>
+                          </div>
                         ) : null}
 
                         {row.message ? (
@@ -438,7 +521,42 @@ export default function SupportChatPanel() {
           )}
         </div>
       </div>
+
+      {previewImageUrl ? (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Close image preview"
+            onClick={() => setPreviewImageUrl("")}
+            className="absolute inset-0"
+          />
+          <div className="relative z-[81] w-full max-w-3xl rounded-2xl border border-white/15 bg-[#090b11] p-3">
+            <img
+              src={previewImageUrl}
+              alt="preview full"
+              className="max-h-[72vh] w-full rounded-xl object-contain"
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  downloadImage(previewImageUrl, previewImageName || `openbookpro-${Date.now()}.png`)
+                }
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
+              >
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewImageUrl("")}
+                className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
-

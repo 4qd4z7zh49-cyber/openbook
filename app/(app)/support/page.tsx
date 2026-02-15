@@ -50,6 +50,9 @@ type SendResponse = {
   };
 };
 
+const BASE_NAV_OFFSET = 72;
+const SAFE_AREA_GAP = 12;
+
 async function readJson<T>(res: Response): Promise<T> {
   try {
     return (await res.json()) as T;
@@ -62,6 +65,22 @@ function fmtWhen(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleTimeString();
+}
+
+function getImageName(message: SupportMessage) {
+  const ts = new Date(message.createdAt || Date.now()).getTime();
+  return `openbookpro-support-${Number.isFinite(ts) ? ts : Date.now()}.png`;
+}
+
+function downloadImage(url: string, name: string) {
+  if (!url) return;
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 async function fileToDataUrl(file: File) {
@@ -78,6 +97,7 @@ export default function SupportPage() {
   const redirectedRef = useRef(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
 
   const [thread, setThread] = useState<SupportResponse["thread"] | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -88,6 +108,11 @@ export default function SupportPage() {
   const [pollMs, setPollMs] = useState(3000);
   const [pickedImageDataUrl, setPickedImageDataUrl] = useState("");
   const [pickedImageName, setPickedImageName] = useState("");
+  const [imageMenuId, setImageMenuId] = useState("");
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageName, setPreviewImageName] = useState("");
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [composerHeight, setComposerHeight] = useState(220);
 
   const authHeaders = useCallback(async () => {
     return getUserAuthHeaders();
@@ -116,7 +141,7 @@ export default function SupportPage() {
 
       setThread(json.thread);
       setMessages(Array.isArray(json.messages) ? json.messages : []);
-      setPollMs(Number(json.pollMs ?? 3000));
+      setPollMs(Math.max(1800, Number(json.pollMs ?? 3000)));
       setErr("");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load support chat";
@@ -141,7 +166,49 @@ export default function SupportPage() {
     const node = bodyRef.current;
     if (!node) return;
     node.scrollTop = node.scrollHeight;
-  }, [messages]);
+  }, [messages.length]);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const syncKeyboard = () => {
+      const inset = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+      setKeyboardInset(inset);
+    };
+
+    syncKeyboard();
+    vv.addEventListener("resize", syncKeyboard);
+    vv.addEventListener("scroll", syncKeyboard);
+    window.addEventListener("resize", syncKeyboard);
+
+    return () => {
+      vv.removeEventListener("resize", syncKeyboard);
+      vv.removeEventListener("scroll", syncKeyboard);
+      window.removeEventListener("resize", syncKeyboard);
+    };
+  }, []);
+
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node) return;
+
+    const syncComposerHeight = () => {
+      setComposerHeight(node.offsetHeight || 220);
+    };
+
+    syncComposerHeight();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(syncComposerHeight);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const closeMenu = () => setImageMenuId("");
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, []);
 
   const onPickPhoto = () => {
     fileRef.current?.click();
@@ -173,6 +240,13 @@ export default function SupportPage() {
     setPickedImageDataUrl("");
     setPickedImageName("");
     if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const openPreview = (message: SupportMessage) => {
+    if (!message.imageUrl) return;
+    setPreviewImageUrl(message.imageUrl);
+    setPreviewImageName(getImageName(message));
+    setImageMenuId("");
   };
 
   const onSend = async () => {
@@ -229,102 +303,173 @@ export default function SupportPage() {
     }
   };
 
-  const statusBadge = useMemo(() => {
-    if (!thread) return null;
-    const open = thread.status === "OPEN";
-    return (
-      <span
-        className={[
-          "rounded-full border px-3 py-1 text-xs font-semibold",
-          open
-            ? "border-emerald-300/30 bg-emerald-500/10 text-emerald-200"
-            : "border-white/15 bg-white/[0.04] text-white/70",
-        ].join(" ")}
-      >
-        {thread.status}
-      </span>
-    );
-  }, [thread]);
+  const statusMeta = useMemo(() => {
+    const open = thread?.status !== "CLOSED";
+    return {
+      label: open ? "Active" : "Closed",
+      className: open
+        ? "border-emerald-300/30 bg-emerald-500/10 text-emerald-200"
+        : "border-white/15 bg-white/[0.05] text-white/70",
+    };
+  }, [thread?.status]);
+
+  const contentBottomPadding = Math.max(
+    240,
+    composerHeight + BASE_NAV_OFFSET + SAFE_AREA_GAP + 24
+  );
+  const composerBottom = BASE_NAV_OFFSET + keyboardInset + SAFE_AREA_GAP;
 
   return (
-    <div className="px-4 pt-5 pb-24">
-      <div className="mx-auto w-full max-w-[900px] space-y-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-2xl font-bold text-white">Openbookpro Client Support</div>
-          <div className="mt-1 text-sm text-white/60">
-            Live chat is auto-synced every few seconds.
+    <>
+      <div className="px-3 pt-4" style={{ paddingBottom: `${contentBottomPadding}px` }}>
+        <div className="mx-auto w-full max-w-[960px] space-y-3">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 sm:p-6">
+            <h1 className="text-2xl font-bold text-white sm:text-5xl">
+              Openbookpro Client Support
+            </h1>
+            <p className="mt-2 text-sm text-white/60 sm:text-xl">
+              Live chat is auto-synced every few seconds.
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span
+                className={[
+                  "rounded-full border px-4 py-1.5 text-sm font-semibold",
+                  statusMeta.className,
+                ].join(" ")}
+              >
+                {statusMeta.label}
+              </span>
+              <span className="text-xs text-white/55 sm:text-sm">Reply within working hours</span>
+            </div>
           </div>
-          <div className="mt-3 flex items-center gap-2 text-sm text-white/70">
-            {statusBadge}
-          </div>
-        </div>
 
-        {err ? (
-          <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-            {err}
-          </div>
-        ) : null}
+          {err ? (
+            <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+              {err}
+            </div>
+          ) : null}
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div
-            ref={bodyRef}
-            className="max-h-[560px] space-y-3 overflow-auto rounded-xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),_rgba(17,24,39,0.85)_40%,_rgba(10,10,14,1)_80%)] p-3"
-          >
-            {loading ? <div className="text-sm text-white/60">Loading messages...</div> : null}
+          <section className="rounded-3xl border border-white/10 bg-white/5 p-3 sm:p-4">
+            <div
+              ref={bodyRef}
+              className="h-[58dvh] min-h-[340px] space-y-3 overflow-auto rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(30,64,175,0.2),_rgba(8,12,20,0.95)_45%,_rgba(2,6,23,0.98)_100%)] p-2.5 sm:h-[56dvh] sm:p-4"
+            >
+              {loading ? <div className="text-sm text-white/60">Loading messages...</div> : null}
 
-            {!loading && messages.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">
-                No messages yet. Start your first message now.
-              </div>
-            ) : null}
+              {!loading && messages.length === 0 ? (
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">
+                  No messages yet. Start your first message now.
+                </div>
+              ) : null}
 
-            {messages.map((row) => {
-              const mine = row.senderRole === "USER";
-              return (
-                <div key={row.id} className={["flex", mine ? "justify-end" : "justify-start"].join(" ")}>
+              {messages.map((row) => {
+                const mine = row.senderRole === "USER";
+                return (
                   <div
-                    className={[
-                      "relative max-w-[90%] rounded-2xl px-3 py-2 text-sm",
-                      mine
-                        ? "bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.35)]"
-                        : "border border-white/10 bg-[#1d1f25] text-white/90",
-                    ].join(" ")}
+                    key={row.id}
+                    className={["flex", mine ? "justify-end" : "justify-start"].join(" ")}
                   >
-                    <span
-                      className={[
-                        "absolute top-3 h-3 w-3 rotate-45",
-                        mine ? "-right-1.5 bg-blue-600" : "-left-1.5 border-l border-t border-white/10 bg-[#1d1f25]",
-                      ].join(" ")}
-                      aria-hidden="true"
-                    />
-
-                    {row.messageType === "IMAGE" && row.imageUrl ? (
-                      <img
-                        src={row.imageUrl}
-                        alt="chat image"
-                        className="mb-2 max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
-                      />
-                    ) : null}
-
-                    {row.message ? (
-                      <div className="whitespace-pre-wrap break-words">{row.message}</div>
-                    ) : null}
-
                     <div
                       className={[
-                        "mt-1 flex items-center justify-end gap-1 text-[10px]",
-                        mine ? "text-blue-100/80" : "text-white/50",
+                        "relative max-w-[88%] rounded-3xl px-3 py-2.5 text-base sm:max-w-[75%]",
+                        mine
+                          ? "bg-blue-600 text-white shadow-[0_10px_25px_rgba(37,99,235,0.4)]"
+                          : "border border-white/10 bg-[#1d1f25] text-white/90",
                       ].join(" ")}
                     >
-                      <span>{fmtWhen(row.createdAt)}</span>
-                      {mine ? <span>• Sent</span> : null}
+                      <span
+                        className={[
+                          "absolute top-3 h-3 w-3 rotate-45",
+                          mine
+                            ? "-right-1.5 bg-blue-600"
+                            : "-left-1.5 border-l border-t border-white/10 bg-[#1d1f25]",
+                        ].join(" ")}
+                        aria-hidden="true"
+                      />
+
+                      {row.messageType === "IMAGE" && row.imageUrl ? (
+                        <div className="relative mb-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImageMenuId((prev) => (prev === row.id ? "" : row.id));
+                            }}
+                            className="absolute right-2 top-2 z-10 rounded-lg border border-black/25 bg-black/45 px-2 py-0.5 text-xs text-white/90"
+                          >
+                            ...
+                          </button>
+
+                          {imageMenuId === row.id ? (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-2 top-9 z-20 w-32 overflow-hidden rounded-lg border border-white/20 bg-[#111827] text-xs text-white shadow-[0_14px_30px_rgba(0,0,0,0.45)]"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => openPreview(row)}
+                                className="block w-full px-3 py-2 text-left hover:bg-white/10"
+                              >
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  downloadImage(row.imageUrl || "", getImageName(row));
+                                  setImageMenuId("");
+                                }}
+                                className="block w-full px-3 py-2 text-left hover:bg-white/10"
+                              >
+                                Download
+                              </button>
+                            </div>
+                          ) : null}
+
+                          <button
+                            type="button"
+                            onClick={() => openPreview(row)}
+                            className="block rounded-xl"
+                          >
+                            <img
+                              src={row.imageUrl}
+                              alt="chat image"
+                              className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
+                            />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {row.message ? (
+                        <div className="whitespace-pre-wrap break-words">{row.message}</div>
+                      ) : null}
+
+                      <div
+                        className={[
+                          "mt-1.5 flex items-center justify-end gap-1 text-xs",
+                          mine ? "text-blue-100/90" : "text-white/55",
+                        ].join(" ")}
+                      >
+                        <span>{fmtWhen(row.createdAt)}</span>
+                        {mine ? <span>• Sent</span> : null}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      </div>
 
+      <div
+        className="fixed inset-x-0 z-40 px-3"
+        style={{ bottom: `calc(${composerBottom}px + env(safe-area-inset-bottom))` }}
+      >
+        <div
+          ref={composerRef}
+          className="mx-auto w-full max-w-[960px] rounded-3xl border border-white/10 bg-[#0b0d12]/95 p-3 shadow-[0_-14px_35px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:p-4"
+        >
           <input
             ref={fileRef}
             type="file"
@@ -334,12 +479,12 @@ export default function SupportPage() {
           />
 
           {pickedImageDataUrl ? (
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+            <div className="mb-3 rounded-xl border border-white/10 bg-black/30 p-3">
               <div className="mb-2 text-xs text-white/60">{pickedImageName || "Selected photo"}</div>
               <img
                 src={pickedImageDataUrl}
                 alt="preview"
-                className="max-h-40 rounded-lg border border-white/10 object-contain"
+                className="max-h-32 rounded-lg border border-white/10 object-contain"
               />
               <button
                 type="button"
@@ -351,41 +496,73 @@ export default function SupportPage() {
             </div>
           ) : null}
 
-          <div className="mt-3">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={3}
-              placeholder="Type your message..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (!sending) void onSend();
-                }
-              }}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm outline-none"
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            placeholder="Type your message..."
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!sending) void onSend();
+              }
+            }}
+            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base outline-none placeholder:text-white/45"
+          />
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onPickPhoto}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-base text-white/90 hover:bg-white/10"
+            >
+              + Photo
+            </button>
+            <button
+              type="button"
+              onClick={() => void onSend()}
+              disabled={sending || (!draft.trim() && !pickedImageDataUrl)}
+              className="rounded-2xl bg-blue-600 px-6 py-2.5 text-base font-semibold text-white disabled:opacity-60"
+            >
+              {sending ? "Sending..." : "Send Message"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {previewImageUrl ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Close image preview"
+            onClick={() => setPreviewImageUrl("")}
+            className="absolute inset-0"
+          />
+          <div className="relative z-[71] w-full max-w-3xl rounded-2xl border border-white/15 bg-[#090b11] p-3">
+            <img
+              src={previewImageUrl}
+              alt="preview full"
+              className="max-h-[72vh] w-full rounded-xl object-contain"
             />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="mt-3 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={onPickPhoto}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 hover:bg-white/10"
+                onClick={() => downloadImage(previewImageUrl, previewImageName || `openbookpro-${Date.now()}.png`)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
               >
-                + Photo
+                Download
               </button>
               <button
                 type="button"
-                onClick={() => void onSend()}
-                disabled={sending || (!draft.trim() && !pickedImageDataUrl)}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                onClick={() => setPreviewImageUrl("")}
+                className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
               >
-                {sending ? "Sending..." : "Send Message"}
+                Close
               </button>
             </div>
           </div>
-        </section>
-      </div>
-    </div>
+        </div>
+      ) : null}
+    </>
   );
 }
-
