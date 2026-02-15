@@ -83,6 +83,23 @@ export default function SignupPage() {
       };
     }
 
+    // Country code field is already separate (`dial`), so local phone input
+    // should not include country calling code again (e.g. +1 and 1XXXXXXXXXX).
+    const dialDigits = normalizedDial.replace(/[^\d]/g, "");
+    const nationalDigits = String(parsed.nationalNumber || "").replace(/[^\d]/g, "");
+    if (
+      dialDigits &&
+      parsed.countryCallingCode === dialDigits &&
+      localDigits.startsWith(dialDigits) &&
+      localDigits.length > nationalDigits.length
+    ) {
+      return {
+        valid: false,
+        e164: "",
+        reason: "contains_country_code" as const,
+      };
+    }
+
     return {
       valid: true,
       e164: parsed.number,
@@ -238,6 +255,8 @@ async function handleSignup(e?: FormEvent) {
               >
                 {phoneIsValid
                   ? "Phone number looks valid."
+                  : phoneCheck.reason === "contains_country_code"
+                    ? "Do not include country code in the phone number field."
                   : phoneCheck.reason === "dial_mismatch"
                     ? "Country code and phone number do not match."
                     : "Phone number is not valid."}
