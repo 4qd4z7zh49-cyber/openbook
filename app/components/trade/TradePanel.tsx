@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getUserAuthHeaders, isUnauthorizedMessage } from "@/lib/clientAuth";
+import { supabase } from "@/lib/supabaseClient";
 
 type Side = "BUY" | "SELL";
 type TradeAsset = "BTC" | "ETH" | "GOLD" | "XRP" | "SOL";
@@ -65,7 +66,7 @@ type HistoryRecord = {
 };
 
 const HISTORY_KEY = "openbookpro.trade.history.v2";
-const TRADE_NOTI_KEY = "openbookpro.trade.notifications.v1";
+const TRADE_NOTI_KEY_PREFIX = "openbookpro.trade.notifications.v2";
 
 type TradeNotificationStatus = "PENDING" | "CONFIRMED";
 
@@ -132,10 +133,17 @@ function saveHistory(next: HistoryRecord[]) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
-function loadTradeNotifications(): TradeNotification[] {
+function tradeNotiKeyForUser(userId: string | null | undefined) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  return `${TRADE_NOTI_KEY_PREFIX}.${id}`;
+}
+
+function loadTradeNotifications(storageKey: string): TradeNotification[] {
+  if (!storageKey) return [];
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(TRADE_NOTI_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -163,13 +171,14 @@ function loadTradeNotifications(): TradeNotification[] {
   }
 }
 
-function upsertTradeNotification(next: TradeNotification) {
+function upsertTradeNotification(storageKey: string, next: TradeNotification) {
+  if (!storageKey) return;
   if (typeof window === "undefined") return;
-  const rows = loadTradeNotifications();
+  const rows = loadTradeNotifications(storageKey);
   const idx = rows.findIndex((x) => x.id === next.id);
   if (idx >= 0) rows[idx] = next;
   else rows.unshift(next);
-  localStorage.setItem(TRADE_NOTI_KEY, JSON.stringify(rows.slice(0, 300)));
+  localStorage.setItem(storageKey, JSON.stringify(rows.slice(0, 300)));
 }
 
 function round2(v: number) {
@@ -351,8 +360,10 @@ export default function TradePanel() {
   const [settlementInfo, setSettlementInfo] = useState("");
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
   const sessionRef = useRef<TradeSession | null>(null);
   const autoSettledLossSessionIdRef = useRef("");
+  const tradeNotiStorageKey = useMemo(() => tradeNotiKeyForUser(currentUserId), [currentUserId]);
 
   const sessionBusy = sessionPhase === "ANALYZING" || sessionPhase === "RUNNING";
   const selectedTier = useMemo(
@@ -392,6 +403,23 @@ export default function TradePanel() {
       window.clearInterval(t);
     };
   }, [loadStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const uid = String(data.user?.id || "");
+        if (!cancelled && uid) setCurrentUserId(uid);
+      } catch {
+        // ignore; local trade notifications are optional
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -526,7 +554,7 @@ export default function TradePanel() {
           claimedAt: Date.now(),
         };
         setHistory((prev) => [item, ...prev].slice(0, 200));
-        upsertTradeNotification({
+        upsertTradeNotification(tradeNotiStorageKey, {
           id: session.id,
           source: "TRADE",
           status: "CONFIRMED",
@@ -565,7 +593,7 @@ export default function TradePanel() {
     return () => {
       cancelled = true;
     };
-  }, [balance, router, session, sessionPhase]);
+  }, [balance, router, session, sessionPhase, tradeNotiStorageKey]);
 
   const startSession = async (side: Side) => {
     setActionErr("");
@@ -648,7 +676,7 @@ export default function TradePanel() {
       points: [100, side === "BUY" ? 100.7 : 99.3],
     };
 
-    upsertTradeNotification({
+    upsertTradeNotification(tradeNotiStorageKey, {
       id: newSession.id,
       source: "TRADE",
       status: "PENDING",
@@ -692,7 +720,7 @@ export default function TradePanel() {
         claimedAt: Date.now(),
       };
       setHistory((prev) => [item, ...prev].slice(0, 200));
-      upsertTradeNotification({
+      upsertTradeNotification(tradeNotiStorageKey, {
         id: current.id,
         source: "TRADE",
         status: "CONFIRMED",

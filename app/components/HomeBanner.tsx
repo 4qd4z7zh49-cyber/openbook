@@ -79,7 +79,7 @@ type TradeNotificationRow = {
   updatedAt?: number;
 };
 
-const TRADE_NOTI_KEY = "openbookpro.trade.notifications.v1";
+const TRADE_NOTI_KEY_PREFIX = "openbookpro.trade.notifications.v2";
 const NOTI_REFRESH_MS = 7_000;
 
 function fmtMoney(v: number) {
@@ -133,10 +133,18 @@ function fmtAmount(v: unknown, maxDigits = 2) {
   return n.toLocaleString(undefined, { maximumFractionDigits: maxDigits });
 }
 
-function loadTradeNotificationsLocal(): NotificationItem[] {
+function tradeNotiKeyForUser(userId: string | null | undefined) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  return `${TRADE_NOTI_KEY_PREFIX}.${id}`;
+}
+
+function loadTradeNotificationsLocal(userId: string | null | undefined): NotificationItem[] {
+  const storageKey = tradeNotiKeyForUser(userId);
+  if (!storageKey) return [];
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(TRADE_NOTI_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -264,7 +272,7 @@ export default function HomeBanner({
 
   const refreshNotifications = useCallback(async () => {
     try {
-      const localTradeItems = loadTradeNotificationsLocal();
+      const localTradeItems = loadTradeNotificationsLocal(profile?.id);
       const headers = await authHeaders();
       const r = await fetch("/api/notifications", {
         cache: "no-store",
@@ -316,11 +324,11 @@ export default function HomeBanner({
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load notifications";
       setNotificationErr(message);
-      setNotifications(loadTradeNotificationsLocal());
+      setNotifications(loadTradeNotificationsLocal(profile?.id));
     } finally {
       setNotificationLoading(false);
     }
-  }, [authHeaders]);
+  }, [authHeaders, profile?.id]);
 
   const toggleNotifications = useCallback(() => {
     setNotificationOpen((prev) => {
