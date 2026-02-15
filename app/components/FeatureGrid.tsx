@@ -27,7 +27,7 @@ const items: Item[] = [
     ),
   },
   {
-    title: "Lock\nMining",
+    title: "AI Driven\nMining",
     href: "/mining",
     icon: () => (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
@@ -80,7 +80,7 @@ const items: Item[] = [
     ),
   },
   {
-    title: "Support",
+    title: "Customer\nSupport",
     href: "/support",
     icon: () => (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
@@ -104,29 +104,6 @@ const items: Item[] = [
           stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
-          opacity="0.95"
-        />
-      </svg>
-    ),
-  },
-  {
-    title: "Mail",
-    href: "/settings",
-    icon: () => (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-        <path
-          d="M4.5 7.5h15v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-9Z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-          opacity="0.95"
-        />
-        <path
-          d="M5.5 8.5 12 13.2l6.5-4.7"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
           opacity="0.95"
         />
       </svg>

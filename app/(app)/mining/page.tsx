@@ -15,6 +15,14 @@ const money = (n?: number | null) => {
   return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 };
 const daysBetween = (a: number, b: number) => Math.max(0, Math.floor((b - a) / 86400000));
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function elapsedDaysProrated(startTs: number, nowTs: number, cycleDays?: number) {
+  if (!Number.isFinite(startTs) || startTs <= 0) return 0;
+  const raw = Math.max(0, (nowTs - startTs) / DAY_MS);
+  if (!Number.isFinite(cycleDays || 0) || !cycleDays || cycleDays <= 0) return raw;
+  return Math.min(raw, cycleDays);
+}
 
 function statusClass(status: MiningOrder["status"]) {
   if (status === "PENDING") return "text-amber-300";
@@ -40,9 +48,10 @@ export default function MiningPage() {
   const [walletUSDT, setWalletUSDT] = useState(0);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
 
-  // summary (mock logic)
+  // summary (live/prorated logic)
   const summary = useMemo(() => {
     const active = orders.filter((o) => o.status === "ACTIVE");
+    const earningOrders = orders.filter((o) => o.status === "ACTIVE" || o.status === "COMPLETED");
 
     const fundsInCustody = active.reduce((s, o) => s + o.principalUSDT, 0);
 
@@ -50,10 +59,15 @@ export default function MiningPage() {
       return s + o.principalUSDT * o.dailyRate;
     }, 0);
 
-    // cumulative income = (days passed * daily) for active (mock)
-    const cumulativeIncome = active.reduce((s, o) => {
-      const d = daysBetween(o.startedAt ?? o.createdAt, nowTs);
-      return s + o.principalUSDT * o.dailyRate * d;
+    // cumulative income grows in real time for ACTIVE orders.
+    // COMPLETED orders keep full-cycle income.
+    const cumulativeIncome = earningOrders.reduce((s, o) => {
+      const startTs = o.startedAt ?? o.createdAt;
+      const progressedDays =
+        o.status === "COMPLETED"
+          ? Number(o.cycleDays) || elapsedDaysProrated(startTs, nowTs, o.cycleDays)
+          : elapsedDaysProrated(startTs, nowTs, o.cycleDays);
+      return s + o.principalUSDT * o.dailyRate * progressedDays;
     }, 0);
 
     return {

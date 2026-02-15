@@ -11,7 +11,10 @@ type Props = {
 };
 
 const money = (n: number) =>
-  n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 export default function MiningSummary({
   fundsInCustody,
