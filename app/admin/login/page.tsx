@@ -12,6 +12,7 @@ function AdminLoginPageInner() {
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [loginAttempt, setLoginAttempt] = useState(0);
 
   function safeNext(path: string) {
     // ✅ prevent redirecting back to login
@@ -21,13 +22,18 @@ function AdminLoginPageInner() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setErr("");
     setLoading(true);
+    setLoginAttempt((v) => v + 1);
 
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     try {
       const r = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           username: username.trim(),
           password: pw,
@@ -49,9 +55,14 @@ function AdminLoginPageInner() {
 
       router.replace(String(j?.redirect || "") || dest);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Network error";
-      setErr(message);
+      if (e instanceof Error && e.name === "AbortError") {
+        setErr("Login request timeout ဖြစ်နေပါတယ်။ ပြန်စမ်းပါ။");
+      } else {
+        const message = e instanceof Error ? e.message : "Network error";
+        setErr(message || "Network error");
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }
@@ -119,6 +130,9 @@ function AdminLoginPageInner() {
             >
               {loading ? "Logging in..." : "Sign in"}
             </button>
+            {loading && loginAttempt > 0 ? (
+              <div className="text-center text-xs text-white/55">If it takes too long, request will auto-timeout.</div>
+            ) : null}
           </div>
         </form>
       </div>

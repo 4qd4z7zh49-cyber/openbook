@@ -50,8 +50,8 @@ type SendResponse = {
   };
 };
 
-const BASE_NAV_OFFSET = 72;
-const SAFE_AREA_GAP = 12;
+const BASE_NAV_OFFSET = 64;
+const SAFE_AREA_GAP = 6;
 
 async function readJson<T>(res: Response): Promise<T> {
   try {
@@ -313,15 +313,13 @@ export default function SupportPage() {
     };
   }, [thread?.status]);
 
-  const contentBottomPadding = Math.max(
-    240,
-    composerHeight + BASE_NAV_OFFSET + SAFE_AREA_GAP + 24
-  );
-  const composerBottom = BASE_NAV_OFFSET + keyboardInset + SAFE_AREA_GAP;
+  const composerBottom =
+    keyboardInset > 0 ? keyboardInset + SAFE_AREA_GAP : BASE_NAV_OFFSET + SAFE_AREA_GAP;
+  const contentBottomPadding = Math.max(220, composerHeight + composerBottom + 20);
 
   return (
     <>
-      <div className="px-3 pt-4" style={{ paddingBottom: `${contentBottomPadding}px` }}>
+      <div className="px-3 pt-4 overscroll-y-none" style={{ paddingBottom: `${contentBottomPadding}px` }}>
         <div className="mx-auto w-full max-w-[960px] space-y-3">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 sm:p-6">
             <h1 className="text-2xl font-bold text-white sm:text-5xl">
@@ -353,7 +351,14 @@ export default function SupportPage() {
           <section className="rounded-3xl border border-white/10 bg-white/5 p-3 sm:p-4">
             <div
               ref={bodyRef}
-              className="h-[58dvh] min-h-[340px] space-y-3 overflow-auto rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(30,64,175,0.2),_rgba(8,12,20,0.95)_45%,_rgba(2,6,23,0.98)_100%)] p-2.5 sm:h-[56dvh] sm:p-4"
+              onWheelCapture={(e) => e.stopPropagation()}
+              onTouchMoveCapture={(e) => e.stopPropagation()}
+              className="h-[58dvh] min-h-[340px] space-y-3 overflow-y-auto overscroll-y-contain rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(30,64,175,0.2),_rgba(8,12,20,0.95)_45%,_rgba(2,6,23,0.98)_100%)] p-2.5 touch-pan-y sm:h-[56dvh] sm:p-4"
+              style={{
+                WebkitOverflowScrolling: "touch",
+                overscrollBehaviorY: "contain",
+                paddingBottom: `${Math.max(20, composerHeight + 18)}px`,
+              }}
             >
               {loading ? <div className="text-sm text-white/60">Loading messages...</div> : null}
 
@@ -431,11 +436,14 @@ export default function SupportPage() {
                             onClick={() => openPreview(row)}
                             className="block rounded-xl"
                           >
-                            <img
-                              src={row.imageUrl}
-                              alt="chat image"
-                              className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
-                            />
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={row.imageUrl}
+                                alt="chat image"
+                                className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
+                              />
+                            </>
                           </button>
                         </div>
                       ) : null}
@@ -464,11 +472,11 @@ export default function SupportPage() {
 
       <div
         className="fixed inset-x-0 z-40 px-3"
-        style={{ bottom: `calc(${composerBottom}px + env(safe-area-inset-bottom))` }}
+        style={{ bottom: `${composerBottom}px` }}
       >
         <div
           ref={composerRef}
-          className="mx-auto w-full max-w-[960px] rounded-3xl border border-white/10 bg-[#0b0d12]/95 p-3 shadow-[0_-14px_35px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:p-4"
+          className="mx-auto w-full max-w-[960px] rounded-3xl border border-white/15 bg-[linear-gradient(180deg,rgba(10,14,24,0.96),rgba(8,12,20,0.94))] p-3 shadow-[0_-12px_34px_rgba(0,0,0,0.5),0_0_0_1px_rgba(59,130,246,0.12)_inset] backdrop-blur-2xl sm:p-3.5"
         >
           <input
             ref={fileRef}
@@ -479,52 +487,75 @@ export default function SupportPage() {
           />
 
           {pickedImageDataUrl ? (
-            <div className="mb-3 rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="mb-2 text-xs text-white/60">{pickedImageName || "Selected photo"}</div>
-              <img
-                src={pickedImageDataUrl}
-                alt="preview"
-                className="max-h-32 rounded-lg border border-white/10 object-contain"
-              />
+            <div className="mb-2.5 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 p-2">
+              <div className="h-11 w-11 overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pickedImageDataUrl}
+                    alt="preview"
+                    className="h-full w-full object-cover"
+                  />
+                </>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs text-white/70">{pickedImageName || "Selected photo"}</div>
+                <div className="text-[11px] text-white/45">Photo ready to send</div>
+              </div>
               <button
                 type="button"
                 onClick={clearPhoto}
-                className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80"
+                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80"
               >
-                Remove Photo
+                Remove
               </button>
             </div>
           ) : null}
 
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={2}
-            placeholder="Type your message..."
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (!sending) void onSend();
-              }
-            }}
-            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base outline-none placeholder:text-white/45"
-          />
-
-          <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/12 bg-[linear-gradient(180deg,rgba(3,6,16,0.84),rgba(2,4,12,0.9))] px-2 py-2">
             <button
               type="button"
               onClick={onPickPhoto}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-base text-white/90 hover:bg-white/10"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/85 shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:bg-white/10"
+              aria-label="Attach photo"
             >
-              + Photo
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path
+                  d="M21.44 11.05 12.25 20.24a5.5 5.5 0 1 1-7.78-7.78l9.19-9.19a3.5 3.5 0 1 1 4.95 4.95L9.41 17.41a1.5 1.5 0 1 1-2.12-2.12l8.49-8.48"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
+
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your message..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (!sending) void onSend();
+                }
+              }}
+              className="h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-white/45"
+            />
+
             <button
               type="button"
               onClick={() => void onSend()}
               disabled={sending || (!draft.trim() && !pickedImageDataUrl)}
-              className="rounded-2xl bg-blue-600 px-6 py-2.5 text-base font-semibold text-white disabled:opacity-60"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2563eb,#1d4ed8)] text-white shadow-[0_8px_22px_rgba(37,99,235,0.45)] disabled:opacity-60"
+              aria-label="Send message"
             >
-              {sending ? "Sending..." : "Send Message"}
+              {sending ? (
+                <span className="text-xs font-semibold">...</span>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4">
+                  <path d="M5 12h12" strokeLinecap="round" />
+                  <path d="m13 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
             </button>
           </div>
         </div>
@@ -539,11 +570,14 @@ export default function SupportPage() {
             className="absolute inset-0"
           />
           <div className="relative z-[71] w-full max-w-3xl rounded-2xl border border-white/15 bg-[#090b11] p-3">
-            <img
-              src={previewImageUrl}
-              alt="preview full"
-              className="max-h-[72vh] w-full rounded-xl object-contain"
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewImageUrl}
+                alt="preview full"
+                className="max-h-[72vh] w-full rounded-xl object-contain"
+              />
+            </>
             <div className="mt-3 flex items-center justify-end gap-2">
               <button
                 type="button"

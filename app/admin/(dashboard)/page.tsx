@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import MiningPendingTable from "../components/MiningPendingTable";
 import WithdrawRequestsPanel from "../components/WithdrawRequestsPanel";
@@ -81,6 +81,13 @@ type RestrictionUpdateResponse = {
   restricted?: boolean;
   tradeRestricted?: boolean;
   miningRestricted?: boolean;
+};
+
+type PasswordResetResponse = {
+  ok?: boolean;
+  error?: string;
+  generated?: boolean;
+  temporaryPassword?: string | null;
 };
 
 type DepositRequestRow = {
@@ -185,6 +192,7 @@ function permissionSessionLabel(mode: TradePermissionMode) {
 export default function AdminPage() {
   const sp = useSearchParams();
   const tab = (sp.get("tab") || "overview").toLowerCase();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
 
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -211,6 +219,9 @@ export default function AdminPage() {
   const [restrictionSavingUserId, setRestrictionSavingUserId] = useState("");
   const [restrictionErr, setRestrictionErr] = useState("");
   const [restrictionInfo, setRestrictionInfo] = useState("");
+  const [passwordResetSavingUserId, setPasswordResetSavingUserId] = useState("");
+  const [passwordResetErr, setPasswordResetErr] = useState("");
+  const [passwordResetInfo, setPasswordResetInfo] = useState("");
   const [depositRequests, setDepositRequests] = useState<DepositRequestRow[]>([]);
   const [depositRequestsLoading, setDepositRequestsLoading] = useState(false);
   const [depositRequestsErr, setDepositRequestsErr] = useState("");
@@ -220,15 +231,21 @@ export default function AdminPage() {
 
   const needUsers = tab === "overview" || tab === "users" || tab === "topups";
 
-  async function fetchUsersList() {
-    const r = await fetch("/api/admin/users", {
+  const fetchUsersList = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (managedBy.toUpperCase() !== "ALL") {
+      params.set("managedBy", managedBy);
+    }
+    const qs = params.toString();
+
+    const r = await fetch(`/api/admin/users${qs ? `?${qs}` : ""}`, {
       method: "GET",
       cache: "no-store",
     });
     const j = await readJson<UsersResponse>(r);
     if (!r.ok) throw new Error(j?.error || "Failed to load users");
     return Array.isArray(j?.users) ? j.users : [];
-  }
+  }, [managedBy]);
 
   async function reloadUsers() {
     setLoadingUsers(true);
@@ -244,7 +261,7 @@ export default function AdminPage() {
     }
   }
 
-  async function fetchDepositAddresses() {
+  const fetchDepositAddresses = useCallback(async () => {
     const r = await fetch("/api/admin/deposit-addresses", {
       method: "GET",
       cache: "no-store",
@@ -261,7 +278,7 @@ export default function AdminPage() {
       SOL: String(j.addresses?.SOL || ""),
       XRP: String(j.addresses?.XRP || ""),
     } as AddressMap;
-  }
+  }, []);
 
   async function reloadDepositAddresses() {
     setDepositAddressLoading(true);
@@ -308,11 +325,12 @@ export default function AdminPage() {
     }
   }
 
-  async function fetchDepositRequests(userId?: string) {
+  const fetchDepositRequests = useCallback(async (userId?: string) => {
     const params = new URLSearchParams();
     params.set("status", "PENDING");
     params.set("limit", "300");
     if (userId) params.set("userId", userId);
+    if (managedBy.toUpperCase() !== "ALL") params.set("managedBy", managedBy);
 
     const r = await fetch(`/api/admin/deposit-requests?${params.toString()}`, {
       method: "GET",
@@ -327,7 +345,7 @@ export default function AdminPage() {
       requests: Array.isArray(j?.requests) ? j.requests : [],
       pendingCount: Number(j?.pendingCount ?? 0),
     };
-  }
+  }, [managedBy]);
 
   async function reloadDepositRequests() {
     setDepositRequestsLoading(true);
@@ -375,8 +393,13 @@ export default function AdminPage() {
     }
   }
 
-  async function fetchPermissionUsers() {
-    const r = await fetch("/api/admin/trade-permission", {
+  const fetchPermissionUsers = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (managedBy.toUpperCase() !== "ALL") {
+      params.set("managedBy", managedBy);
+    }
+    const qs = params.toString();
+    const r = await fetch(`/api/admin/trade-permission${qs ? `?${qs}` : ""}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -387,7 +410,7 @@ export default function AdminPage() {
       ...u,
       permissionMode: normalizePermissionMode(u.permissionMode),
     }));
-  }
+  }, [managedBy]);
 
   async function reloadPermissionUsers() {
     setPermissionLoading(true);
@@ -459,7 +482,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [needUsers]);
+  }, [needUsers, fetchUsersList]);
 
   useEffect(() => {
     if (tab !== "orders") return;
@@ -485,7 +508,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab]);
+  }, [tab, fetchPermissionUsers]);
 
   useEffect(() => {
     if (tab !== "topups") return;
@@ -524,7 +547,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab]);
+  }, [tab, fetchDepositRequests, fetchDepositAddresses]);
 
   const usersForTable = useMemo(() => users, [users]);
   const selectedUserRequests = useMemo(() => {
@@ -611,6 +634,53 @@ export default function AdminPage() {
       setRestrictionErr(message);
     } finally {
       setRestrictionSavingUserId("");
+    }
+  };
+
+  const resetUserPassword = async (u: UserRow) => {
+    const input = window.prompt(
+      "Set new password. Leave blank and press OK to auto-generate a temporary password (min 8 chars).",
+      ""
+    );
+    if (input === null) return;
+
+    const nextPassword = String(input || "").trim();
+    if (nextPassword.length > 0 && nextPassword.length < 8) {
+      setPasswordResetErr("New password must be at least 8 characters.");
+      setPasswordResetInfo("");
+      return;
+    }
+
+    setPasswordResetSavingUserId(u.id);
+    setPasswordResetErr("");
+    setPasswordResetInfo("");
+
+    try {
+      const r = await fetch("/api/admin/reset-user-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: u.id,
+          newPassword: nextPassword || undefined,
+        }),
+      });
+
+      const j = await readJson<PasswordResetResponse>(r);
+      if (!r.ok || !j?.ok) {
+        throw new Error(j?.error || "Failed to reset password");
+      }
+
+      const label = u.username ?? u.email ?? "User";
+      if (j.generated && j.temporaryPassword) {
+        setPasswordResetInfo(`Temporary password for ${label}: ${j.temporaryPassword}`);
+      } else {
+        setPasswordResetInfo(`Password reset completed for ${label}.`);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to reset password";
+      setPasswordResetErr(message);
+    } finally {
+      setPasswordResetSavingUserId("");
     }
   };
 
@@ -747,6 +817,8 @@ export default function AdminPage() {
         {usersErr ? <div className="text-red-400">{usersErr}</div> : null}
         {restrictionErr ? <div className="mb-3 text-sm text-red-300">{restrictionErr}</div> : null}
         {restrictionInfo ? <div className="mb-3 text-sm text-emerald-300">{restrictionInfo}</div> : null}
+        {passwordResetErr ? <div className="mb-3 text-sm text-red-300">{passwordResetErr}</div> : null}
+        {passwordResetInfo ? <div className="mb-3 text-sm text-emerald-300">{passwordResetInfo}</div> : null}
 
         {!loadingUsers && !usersErr && (
           <div className="overflow-x-auto">
@@ -765,6 +837,7 @@ export default function AdminPage() {
                 {usersForTable.map((u) => {
                   const restricted = isUserRestricted(u);
                   const isSaving = restrictionSavingUserId === u.id;
+                  const isResetting = passwordResetSavingUserId === u.id;
 
                   return (
                     <tr key={u.id} className="border-t border-white/10">
@@ -785,17 +858,29 @@ export default function AdminPage() {
                       </td>
                       <td className="py-3 text-right">{fmtDate(u.created_at)}</td>
                       <td className="py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => void toggleUserRestriction(u)}
-                          disabled={isSaving}
-                          className={
-                            "rounded-full px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 " +
-                            (restricted ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500")
-                          }
-                        >
-                          {isSaving ? "Saving..." : restricted ? "Unrestrict" : "Restrict"}
-                        </button>
+                        <div className="inline-flex flex-wrap justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void resetUserPassword(u)}
+                            disabled={isResetting || isSaving}
+                            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-blue-500"
+                          >
+                            {isResetting ? "Resetting..." : "Reset Password"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void toggleUserRestriction(u)}
+                            disabled={isSaving || isResetting}
+                            className={
+                              "rounded-full px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 " +
+                              (restricted
+                                ? "bg-emerald-600 hover:bg-emerald-500"
+                                : "bg-rose-600 hover:bg-rose-500")
+                            }
+                          >
+                            {isSaving ? "Saving..." : restricted ? "Unrestrict" : "Restrict"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

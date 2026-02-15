@@ -72,7 +72,9 @@ export default function DataTable<T extends { id: string }>({
                         c.align === "right" ? "text-right" : "text-left"
                       } ${c.muted ? "text-white/60" : "text-white/90"}`}
                     >
-                      {c.render ? c.render(r) : String((r as any)[c.key] ?? "")}
+                      {c.render
+                        ? c.render(r)
+                        : String((r as Record<string, unknown>)[String(c.key)] ?? "")}
                     </td>
                   ))}
 

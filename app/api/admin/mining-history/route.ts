@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { MINING_PLANS } from "@/lib/miningMock";
-import { requireAdminSession, supabaseAdmin } from "../_helpers";
+import {
+  isRootAdminRole,
+  requireAdminSession,
+  resolveRootManagedUserIds,
+  supabaseAdmin,
+} from "../_helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -69,9 +74,11 @@ export async function GET(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { adminId, role } = auth;
+  const url = new URL(req.url);
+  const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
 
   let visibleUserIds: string[] | null = null;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!isRootAdminRole(role)) {
     const { data: users, error: uErr } = await supabaseAdmin
       .from("profiles")
       .select("id")
@@ -81,6 +88,11 @@ export async function GET(req: Request) {
     const ids = (users || []).map((x: { id: string }) => x.id);
     if (ids.length === 0) return NextResponse.json({ rows: [] });
     visibleUserIds = ids;
+  } else {
+    visibleUserIds = await resolveRootManagedUserIds(managedByRaw);
+    if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) {
+      return NextResponse.json({ rows: [] });
+    }
   }
 
   let query = supabaseAdmin

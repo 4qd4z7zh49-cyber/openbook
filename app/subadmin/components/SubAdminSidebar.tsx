@@ -139,7 +139,7 @@ export default function SubAdminSidebar() {
                     {pendingWithdrawCount}
                   </span>
                 ) : null}
-                {it.key === "notify" && pendingNotifyCount > 0 ? (
+                {it.key === "notify" && tab !== "notify" && pendingNotifyCount > 0 ? (
                   <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                     {pendingNotifyCount}
                   </span>

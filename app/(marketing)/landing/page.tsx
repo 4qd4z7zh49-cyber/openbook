@@ -16,7 +16,9 @@ export default function HomeLanding() {
 
   useEffect(() => {
     // Avoid SSR/client hydration mismatch by computing time-based values on the client.
-    setYear(String(new Date().getFullYear()));
+    const yearFrame = window.requestAnimationFrame(() => {
+      setYear(String(new Date().getFullYear()));
+    });
 
     const onScroll = () => {
       if (!logoRef.current) return;
@@ -25,7 +27,10 @@ export default function HomeLanding() {
       logoRef.current.style.opacity = String(opacity);
     };
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => {
+      window.cancelAnimationFrame(yearFrame);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -369,12 +374,15 @@ export default function HomeLanding() {
       `}</style>
 
       <div className="bg">
-        <img
-          ref={logoRef}
-          className="heroLogo"
-          src="/openbook.png"
-          alt="OPENBOOKPRO"
-        />
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            ref={logoRef}
+            className="heroLogo"
+            src="/openbook.png"
+            alt="OPENBOOKPRO"
+          />
+        </>
         <div className="layer">
         <div className="topbar">
           <div className="topbarInner">

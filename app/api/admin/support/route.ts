@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { assertCanManageUser, readCookie, requireAdminSession, supabaseAdmin } from "../_helpers";
+import {
+  assertCanManageUser,
+  isRootAdminRole,
+  readCookie,
+  requireAdminSession,
+  resolveRootManagedUserIds,
+  supabaseAdmin,
+} from "../_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,10 +57,6 @@ function normalizeSender(value: unknown): SenderRole {
   return String(value || "").toUpperCase() === "ADMIN" ? "ADMIN" : "USER";
 }
 
-function isRootAdmin(role: string) {
-  return role === "admin" || role === "superadmin";
-}
-
 function resolveSupportAuth(req: Request) {
   const strict = requireAdminSession(req);
   if (strict) return strict;
@@ -63,7 +66,7 @@ function resolveSupportAuth(req: Request) {
   const adminId = String(readCookie(req, "admin_id") || "");
   if (!session || !role) return null;
 
-  if (isRootAdmin(role)) {
+  if (isRootAdminRole(role)) {
     return { role, adminId };
   }
   return null;
@@ -79,13 +82,13 @@ async function managedUserIds(adminId: string) {
   return (data || []).map((row) => String(row.id)).filter(Boolean);
 }
 
-async function pendingCount(role: string, adminId: string) {
-  let userIds: string[] | null = null;
+async function pendingCount(role: string, adminId: string, userIds?: string[] | null) {
+  let visibleUserIds = userIds ?? null;
 
-  if (!isRootAdmin(role)) {
-    userIds = await managedUserIds(adminId);
-    if (userIds.length === 0) return 0;
+  if (!isRootAdminRole(role) && !Array.isArray(visibleUserIds)) {
+    visibleUserIds = await managedUserIds(adminId);
   }
+  if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) return 0;
 
   let q = supabaseAdmin
     .from("support_threads")
@@ -93,8 +96,8 @@ async function pendingCount(role: string, adminId: string) {
     .eq("status", "OPEN")
     .eq("last_sender", "USER");
 
-  if (userIds) {
-    q = q.in("user_id", userIds);
+  if (Array.isArray(visibleUserIds)) {
+    q = q.in("user_id", visibleUserIds);
   }
 
   const { count, error } = await q;
@@ -137,7 +140,7 @@ async function readThreadByUser(userId: string) {
 }
 
 async function canManageThread(role: string, adminId: string, thread: ThreadRow) {
-  if (isRootAdmin(role)) return true;
+  if (isRootAdminRole(role)) return true;
   if (!adminId) return false;
   return assertCanManageUser(adminId, role, String(thread.user_id || ""));
 }
@@ -151,10 +154,19 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const mode = String(url.searchParams.get("mode") || "").toLowerCase();
+    const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
+    let managedIds: string[] | null = null;
+
+    if (isRootAdminRole(role)) {
+      managedIds = await resolveRootManagedUserIds(managedByRaw);
+    } else {
+      managedIds = await managedUserIds(adminId);
+    }
+
     if (mode === "badge") {
       return NextResponse.json({
         ok: true,
-        pendingCount: await pendingCount(role, adminId),
+        pendingCount: await pendingCount(role, adminId, managedIds),
       });
     }
 
@@ -164,21 +176,26 @@ export async function GET(req: Request) {
     const limitRaw = Number(url.searchParams.get("limit") || 200);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 200;
 
-    let managedIds: string[] | null = null;
-    if (!isRootAdmin(role)) {
-      managedIds = await managedUserIds(adminId);
-      if (managedIds.length === 0) {
-        return NextResponse.json({
-          ok: true,
-          pendingCount: 0,
-          threads: [],
-          activeThreadId: null,
-          messages: [],
-        });
-      }
-      if (userId && !managedIds.includes(userId)) {
+    if (Array.isArray(managedIds) && managedIds.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        pendingCount: 0,
+        threads: [],
+        activeThreadId: null,
+        messages: [],
+      });
+    }
+    if (userId && Array.isArray(managedIds) && !managedIds.includes(userId)) {
+      if (!isRootAdminRole(role)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+      return NextResponse.json({
+        ok: true,
+        pendingCount: await pendingCount(role, adminId, managedIds),
+        threads: [],
+        activeThreadId: null,
+        messages: [],
+      });
     }
 
     let q = supabaseAdmin
@@ -187,7 +204,7 @@ export async function GET(req: Request) {
       .order("last_message_at", { ascending: false })
       .limit(limit);
 
-    if (managedIds) {
+    if (Array.isArray(managedIds)) {
       q = q.in("user_id", managedIds);
     }
     if (userId) {
@@ -292,7 +309,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      pendingCount: await pendingCount(role, adminId),
+      pendingCount: await pendingCount(role, adminId, managedIds),
       activeThreadId: selected ? String(selected.id) : null,
       threads: threads.map((row) => {
         const uid = String(row.user_id || "");
@@ -353,7 +370,7 @@ export async function POST(req: Request) {
     let thread = threadId ? await readThreadById(threadId) : null;
 
     if (!thread && userId) {
-      if (!isRootAdmin(role)) {
+      if (!isRootAdminRole(role)) {
         const can = await assertCanManageUser(adminId, role, userId);
         if (!can) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

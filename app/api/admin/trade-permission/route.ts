@@ -40,6 +40,9 @@ export async function GET(req: Request) {
   const { adminId, role } = auth;
 
   try {
+    const url = new URL(req.url);
+    const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
+
     let q = supabaseAdmin
       .from("profiles")
       .select("id, username, email, managed_by")
@@ -47,6 +50,13 @@ export async function GET(req: Request) {
 
     if (role === "sub-admin" || role === "subadmin") {
       q = q.eq("managed_by", adminId);
+    } else {
+      const managedByUpper = managedByRaw.toUpperCase();
+      if (managedByUpper === "UNASSIGNED") {
+        q = q.is("managed_by", null);
+      } else if (managedByRaw && managedByUpper !== "ALL") {
+        q = q.eq("managed_by", managedByRaw);
+      }
     }
 
     const { data: profiles, error: pErr } = await q;

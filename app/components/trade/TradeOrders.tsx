@@ -11,15 +11,16 @@ export default function TradeOrders({
   orders: Order[];
   pnl: number;
 }) {
+  const tabs = ["open", "history"] as const;
   const [tab, setTab] = useState<'open' | 'history'>('open');
 
   return (
     <div className="bg-black border border-neutral-800 rounded-xl p-3">
       <div className="flex gap-2 mb-3">
-        {['open', 'history'].map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t as any)}
+            onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full ${
               tab === t ? 'bg-slate-700' : 'bg-neutral-900'
             }`}

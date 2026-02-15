@@ -208,8 +208,9 @@ export default function MarketsPage() {
         if (json.error) throw new Error(json.error);
 
         if (!cancelled) setCoins(json.data ?? []);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? "Failed to load markets");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Failed to load markets";
+        if (!cancelled) setErr(message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -404,17 +405,20 @@ export default function MarketsPage() {
                 }}
               >
                 {c.image ? (
-                  <img
-                    src={c.image}
-                    alt={c.symbol.toUpperCase()}
-                    width={44}
-                    height={44}
-                    style={{
-                      borderRadius: 16,
-                      background: "rgba(255,255,255,.06)",
-                      border: "1px solid rgba(255,255,255,.08)",
-                    }}
-                  />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={c.image}
+                      alt={c.symbol.toUpperCase()}
+                      width={44}
+                      height={44}
+                      style={{
+                        borderRadius: 16,
+                        background: "rgba(255,255,255,.06)",
+                        border: "1px solid rgba(255,255,255,.08)",
+                      }}
+                    />
+                  </>
                 ) : (
                   <div
                     aria-label={c.symbol.toUpperCase()}

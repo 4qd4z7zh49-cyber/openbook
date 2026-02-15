@@ -208,7 +208,9 @@ function sourceLabel(source: NotificationSource) {
 }
 
 function notificationStatusLabel(item: NotificationItem) {
-  if (item.source === "SUPPORT" && item.status === "PENDING") return "UNREAD";
+  if (item.source === "SUPPORT" || item.source === "NOTIFY") {
+    return item.status === "PENDING" ? "UNREAD" : "READ";
+  }
   return item.status;
 }
 
@@ -818,7 +820,7 @@ export default function HomeBanner({
                 <div className="text-lg font-semibold">{selectedNotification.title}</div>
                 <div className={theme === "light" ? "text-xs text-slate-500" : "text-xs text-white/60"}>
                   {sourceLabel(selectedNotification.source)} ·{" "}
-                  {selectedNotification.status}
+                  {notificationStatusLabel(selectedNotification)}
                 </div>
               </div>
               <button

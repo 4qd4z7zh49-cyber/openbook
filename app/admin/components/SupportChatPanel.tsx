@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type ThreadStatus = "OPEN" | "CLOSED";
 type SenderRole = "USER" | "ADMIN";
@@ -107,6 +108,8 @@ async function fileToDataUrl(file: File) {
 }
 
 export default function SupportChatPanel() {
+  const sp = useSearchParams();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [threads, setThreads] = useState<SupportThread[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -147,7 +150,10 @@ export default function SupportChatPanel() {
     setUsersLoading(true);
     setUsersErr("");
     try {
-      const r = await fetch("/api/admin/users", {
+      const params = new URLSearchParams();
+      if (managedBy.toUpperCase() !== "ALL") params.set("managedBy", managedBy);
+      const qs = params.toString();
+      const r = await fetch(`/api/admin/users${qs ? `?${qs}` : ""}`, {
         cache: "no-store",
         credentials: "include",
       });
@@ -164,7 +170,7 @@ export default function SupportChatPanel() {
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [managedBy]);
 
   const loadData = useCallback(async (opts?: { threadId?: string; userId?: string; silent?: boolean }) => {
     const threadId = String(opts?.threadId || "");
@@ -182,6 +188,7 @@ export default function SupportChatPanel() {
       if (target) params.set("threadId", target);
       const targetUserId = directUserId || (target ? "" : focusUserIdRef.current);
       if (targetUserId) params.set("userId", targetUserId);
+      if (managedBy.toUpperCase() !== "ALL") params.set("managedBy", managedBy);
 
       const r = await fetch(`/api/admin/support?${params.toString()}`, {
         cache: "no-store",
@@ -215,7 +222,7 @@ export default function SupportChatPanel() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [managedBy]);
 
   useEffect(() => {
     activeThreadIdRef.current = activeThreadId;
@@ -568,11 +575,14 @@ export default function SupportChatPanel() {
                               }}
                               className="block rounded-xl"
                             >
-                              <img
-                                src={row.imageUrl}
-                                alt="chat image"
-                                className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
-                              />
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={row.imageUrl}
+                                  alt="chat image"
+                                  className="max-h-72 w-auto max-w-full rounded-xl border border-white/20 object-contain"
+                                />
+                              </>
                             </button>
                           </div>
                         ) : null}
@@ -613,11 +623,14 @@ export default function SupportChatPanel() {
               {pickedImageDataUrl ? (
                 <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
                   <div className="mb-2 text-xs text-white/60">{pickedImageName || "Selected photo"}</div>
-                  <img
-                    src={pickedImageDataUrl}
-                    alt="preview"
-                    className="max-h-40 rounded-lg border border-white/10 object-contain"
-                  />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pickedImageDataUrl}
+                      alt="preview"
+                      className="max-h-40 rounded-lg border border-white/10 object-contain"
+                    />
+                  </>
                   <button
                     type="button"
                     onClick={clearPhoto}
@@ -679,11 +692,14 @@ export default function SupportChatPanel() {
             className="absolute inset-0"
           />
           <div className="relative z-[81] w-full max-w-3xl rounded-2xl border border-white/15 bg-[#090b11] p-3">
-            <img
-              src={previewImageUrl}
-              alt="preview full"
-              className="max-h-[72vh] w-full rounded-xl object-contain"
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewImageUrl}
+                alt="preview full"
+                className="max-h-[72vh] w-full rounded-xl object-contain"
+              />
+            </>
             <div className="mt-3 flex items-center justify-end gap-2">
               <button
                 type="button"

@@ -37,6 +37,8 @@ export async function GET(req: Request) {
   const session = getCookie("admin_session");
   const role = getCookie("admin_role");
   const adminId = getCookie("admin_id");
+  const url = new URL(req.url);
+  const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
 
   if (!session || !role || !adminId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -49,6 +51,13 @@ export async function GET(req: Request) {
 
   if (role === "sub-admin" || role === "subadmin") {
     q = q.eq("managed_by", adminId);
+  } else {
+    const managedByUpper = managedByRaw.toUpperCase();
+    if (managedByUpper === "UNASSIGNED") {
+      q = q.is("managed_by", null);
+    } else if (managedByRaw && managedByUpper !== "ALL") {
+      q = q.eq("managed_by", managedByRaw);
+    }
   }
 
   const { data: profiles, error: pErr } = await q;

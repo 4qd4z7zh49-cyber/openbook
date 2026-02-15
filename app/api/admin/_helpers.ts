@@ -42,6 +42,39 @@ export function requireAdminSession(req: Request) {
   return { role, adminId };
 }
 
+export function isRootAdminRole(role: string) {
+  return role === "admin" || role === "superadmin";
+}
+
+export type ManagedByFilter =
+  | { kind: "ALL" }
+  | { kind: "UNASSIGNED" }
+  | { kind: "MANAGER"; managerId: string };
+
+export function parseManagedByFilter(value: unknown): ManagedByFilter {
+  const raw = String(value || "").trim();
+  if (!raw || raw.toUpperCase() === "ALL") return { kind: "ALL" };
+  if (raw.toUpperCase() === "UNASSIGNED") return { kind: "UNASSIGNED" };
+  return { kind: "MANAGER", managerId: raw };
+}
+
+export async function resolveRootManagedUserIds(managedByRaw: unknown) {
+  const filter = parseManagedByFilter(managedByRaw);
+  if (filter.kind === "ALL") return null as string[] | null;
+
+  let q = getSupabaseAdminClient().from("profiles").select("id");
+  if (filter.kind === "UNASSIGNED") {
+    q = q.is("managed_by", null);
+  } else {
+    q = q.eq("managed_by", filter.managerId);
+  }
+
+  const { data, error } = await q.limit(10000);
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((row: { id: string }) => String(row.id)).filter(Boolean);
+}
+
 // ✅ subadmin က target user ကို လုပ်ခွင့်ရှိလားစစ်
 export async function assertCanManageUser(adminId: string, role: string, userId: string) {
   if (role === "admin" || role === "superadmin") return true;

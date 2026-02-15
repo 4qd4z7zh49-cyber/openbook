@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { assertCanManageUser, readCookie, requireAdminSession, supabaseAdmin } from "../_helpers";
+import {
+  assertCanManageUser,
+  isRootAdminRole,
+  readCookie,
+  requireAdminSession,
+  resolveRootManagedUserIds,
+  supabaseAdmin,
+} from "../_helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -11,13 +18,13 @@ type Body = {
   message?: string;
 };
 
+type PendingUserRow = {
+  user_id: string | null;
+};
+
 function parseBody(value: unknown): Body {
   if (!value || typeof value !== "object") return {};
   return value as Body;
-}
-
-function isRootAdmin(role: string) {
-  return role === "admin" || role === "superadmin";
 }
 
 function resolveNotifyAuth(req: Request) {
@@ -30,7 +37,7 @@ function resolveNotifyAuth(req: Request) {
   if (!session || !role) return null;
 
   // Fallback: allow root admin access even when admin_id cookie is missing.
-  if (isRootAdmin(role)) {
+  if (isRootAdminRole(role)) {
     return { role, adminId };
   }
   return null;
@@ -44,19 +51,51 @@ function normalizeStatus(value: unknown): NotifyStatus {
   return "PENDING";
 }
 
-async function pendingCount(role: string, adminId: string) {
+async function pendingCount(role: string, adminId: string, visibleUserIds?: string[] | null) {
+  if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) return 0;
+
   let q = supabaseAdmin
     .from("user_notifications")
     .select("id", { count: "exact", head: true })
     .eq("status", "PENDING");
 
-  if (!isRootAdmin(role)) {
+  if (Array.isArray(visibleUserIds)) {
+    q = q.in("user_id", visibleUserIds);
+  } else if (!isRootAdminRole(role)) {
     q = q.eq("admin_id", adminId);
   }
 
   const { count, error } = await q;
   if (error) throw new Error(error.message);
   return Number(count ?? 0);
+}
+
+async function pendingCountByUser(role: string, adminId: string, visibleUserIds?: string[] | null) {
+  if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) return {} as Record<string, number>;
+
+  let q = supabaseAdmin
+    .from("user_notifications")
+    .select("user_id")
+    .eq("status", "PENDING")
+    .limit(10000);
+
+  if (Array.isArray(visibleUserIds)) {
+    q = q.in("user_id", visibleUserIds);
+  } else if (!isRootAdminRole(role)) {
+    q = q.eq("admin_id", adminId);
+  }
+
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+
+  const next: Record<string, number> = {};
+  ((data || []) as PendingUserRow[]).forEach((row) => {
+    const userId = String(row.user_id || "").trim();
+    if (!userId) return;
+    next[userId] = Number(next[userId] || 0) + 1;
+  });
+
+  return next;
 }
 
 export async function GET(req: Request) {
@@ -68,9 +107,20 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const userId = String(url.searchParams.get("userId") || "").trim();
+    const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
     const statusRaw = String(url.searchParams.get("status") || "").trim().toUpperCase();
     const limitRaw = Number(url.searchParams.get("limit") || 300);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 300;
+    const visibleUserIds = isRootAdminRole(role)
+      ? await resolveRootManagedUserIds(managedByRaw)
+      : null;
+
+    if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) {
+      return NextResponse.json({ ok: true, pendingCount: 0, notifications: [] });
+    }
+    if (userId && Array.isArray(visibleUserIds) && !visibleUserIds.includes(userId)) {
+      return NextResponse.json({ ok: true, pendingCount: 0, notifications: [] });
+    }
 
     if (userId) {
       const canManage = await assertCanManageUser(adminId, role, userId);
@@ -83,8 +133,10 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: false })
       .limit(limit);
 
-    if (!isRootAdmin(role)) {
+    if (!isRootAdminRole(role)) {
       q = q.eq("admin_id", adminId);
+    } else if (Array.isArray(visibleUserIds)) {
+      q = q.in("user_id", visibleUserIds);
     }
     if (userId) {
       q = q.eq("user_id", userId);
@@ -115,9 +167,13 @@ export async function GET(req: Request) {
       });
     }
 
+    const unreadByUserId = await pendingCountByUser(role, adminId, visibleUserIds);
+    const pending = Object.values(unreadByUserId).reduce((sum, n) => sum + Number(n || 0), 0);
+
     return NextResponse.json({
       ok: true,
-      pendingCount: await pendingCount(role, adminId),
+      pendingCount: pending,
+      unreadByUserId,
       notifications: rows.map((r) => ({
         id: String(r.id),
         userId: String(r.user_id),
@@ -177,12 +233,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error?.message || "Failed to send notification" }, { status: 500 });
     }
 
+    let username: string | null = null;
+    let email: string | null = null;
+    const { data: profileRow, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id,username,email")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    if (profileRow) {
+      username = profileRow.username ? String(profileRow.username) : null;
+      email = profileRow.email ? String(profileRow.email) : null;
+    }
+
     return NextResponse.json({
       ok: true,
       notification: {
         id: String(data.id),
         userId: String(data.user_id),
         adminId: data.admin_id ? String(data.admin_id) : null,
+        username,
+        email,
         subject: String(data.subject || ""),
         message: String(data.message || ""),
         status: normalizeStatus(data.status),

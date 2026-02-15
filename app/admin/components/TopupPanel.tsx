@@ -52,8 +52,8 @@ export default function TopupPanel({
         setAmount("");
         if (onSuccess) onSuccess();
       }
-    } catch (e: any) {
-      setError(e?.message || "Server error");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Server error");
     } finally {
       setLoading(false);
     }

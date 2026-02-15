@@ -1,4 +1,4 @@
-import { getCountryCallingCode } from "libphonenumber-js";
+import { getCountryCallingCode, type CountryCode } from "libphonenumber-js";
 
 /**
  * ISO 3166-1 alpha-2 country codes (static list)
@@ -29,10 +29,10 @@ export type CountryOption = {
 };
 
 export function buildCountryOptions(locale: string = "en"): CountryOption[] {
-  const hasIntlNames =
-    typeof Intl !== "undefined" && typeof (Intl as any).DisplayNames !== "undefined";
-
-  const dn = hasIntlNames ? new (Intl as any).DisplayNames([locale], { type: "region" }) : null;
+  const dn: Intl.DisplayNames | null =
+    typeof Intl !== "undefined" && typeof Intl.DisplayNames !== "undefined"
+      ? new Intl.DisplayNames([locale], { type: "region" })
+      : null;
 
   const options: CountryOption[] = REGION_CODES.map((code) => {
     let name = code;
@@ -43,7 +43,7 @@ export function buildCountryOptions(locale: string = "en"): CountryOption[] {
 
     let dial = "";
     try {
-      dial = "+" + getCountryCallingCode(code as any);
+      dial = "+" + getCountryCallingCode(code as CountryCode);
     } catch {
       dial = "";
     }

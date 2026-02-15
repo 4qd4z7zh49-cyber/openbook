@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type MiningRow = {
   id: string;
@@ -41,6 +42,8 @@ function statusLabel(status: MiningRow["status"]) {
 }
 
 export default function MiningPendingTable() {
+  const sp = useSearchParams();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [pendingRows, setPendingRows] = useState<MiningRow[]>([]);
   const [historyRows, setHistoryRows] = useState<MiningRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,12 +55,20 @@ export default function MiningPendingTable() {
     setErr("");
 
     try {
+      const params = new URLSearchParams();
+      if (managedBy.toUpperCase() !== "ALL") {
+        params.set("managedBy", managedBy);
+      }
+      const managedQuery = params.toString();
+      const withManagedBy = (path: string) =>
+        managedQuery ? `${path}${path.includes("?") ? "&" : "?"}${managedQuery}` : path;
+
       const [pendingRes, historyRes] = await Promise.all([
-        fetch("/api/admin/mining-pending", {
+        fetch(withManagedBy("/api/admin/mining-pending"), {
           method: "GET",
           cache: "no-store",
         }),
-        fetch("/api/admin/mining-history", {
+        fetch(withManagedBy("/api/admin/mining-history"), {
           method: "GET",
           cache: "no-store",
         }),
@@ -83,7 +94,7 @@ export default function MiningPendingTable() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [managedBy]);
 
   useEffect(() => {
     void load();

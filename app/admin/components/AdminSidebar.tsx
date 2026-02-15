@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type DepositRequestBadgeResponse = {
@@ -8,19 +8,55 @@ type DepositRequestBadgeResponse = {
   pendingCount?: number;
 };
 
+type ManagerRow = {
+  id: string;
+  username?: string | null;
+  role?: string | null;
+};
+
+type ManagersResponse = {
+  ok?: boolean;
+  managers?: ManagerRow[];
+};
+
 export default function AdminSidebar() {
   const router = useRouter();
+  const pathname = usePathname();
   const sp = useSearchParams();
   const tab = (sp.get("tab") || "overview").toLowerCase();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [logoutErr, setLogoutErr] = useState("");
   const [pendingDepositCount, setPendingDepositCount] = useState(0);
   const [pendingWithdrawCount, setPendingWithdrawCount] = useState(0);
   const [pendingNotifyCount, setPendingNotifyCount] = useState(0);
   const [pendingSupportCount, setPendingSupportCount] = useState(0);
+  const [managers, setManagers] = useState<ManagerRow[]>([]);
+  const [managersLoading, setManagersLoading] = useState(false);
 
-  const goTab = (t: string) => router.push(`/admin?tab=${t}`);
+  const goTab = (t: string) => {
+    const params = new URLSearchParams(sp.toString());
+    params.set("tab", t);
+    if (!managedBy || managedBy.toUpperCase() === "ALL") {
+      params.delete("managedBy");
+    } else {
+      params.set("managedBy", managedBy);
+    }
+    router.push(`/admin?${params.toString()}`);
+  };
   const goManageAdmin = () => router.push("/admin/manage-admin");
+  const goManageUser = () => router.push("/admin/manage-user");
+
+  const onChangeManagedBy = (value: string) => {
+    const params = new URLSearchParams(sp.toString());
+    params.set("tab", tab || "overview");
+    if (!value || value.toUpperCase() === "ALL") {
+      params.delete("managedBy");
+    } else {
+      params.set("managedBy", value);
+    }
+    router.push(`/admin?${params.toString()}`);
+  };
 
   const onLogout = async () => {
     setLogoutLoading(true);
@@ -48,20 +84,30 @@ export default function AdminSidebar() {
 
     const run = async () => {
       try {
+        const managedByParams = new URLSearchParams();
+        if (managedBy && managedBy.toUpperCase() !== "ALL") {
+          managedByParams.set("managedBy", managedBy);
+        }
+        const managedByQuery = managedByParams.toString();
+        const withManagedBy = (path: string) => {
+          if (!managedByQuery) return path;
+          return `${path}${path.includes("?") ? "&" : "?"}${managedByQuery}`;
+        };
+
         const [depRes, wdRes, notifyRes, supportRes] = await Promise.all([
-          fetch("/api/admin/deposit-requests?status=PENDING&limit=1", {
+          fetch(withManagedBy("/api/admin/deposit-requests?status=PENDING&limit=1"), {
             cache: "no-store",
             credentials: "include",
           }),
-          fetch("/api/admin/withdraw-requests?status=PENDING&limit=1", {
+          fetch(withManagedBy("/api/admin/withdraw-requests?status=PENDING&limit=1"), {
             cache: "no-store",
             credentials: "include",
           }),
-          fetch("/api/admin/notify?status=PENDING&limit=1", {
+          fetch(withManagedBy("/api/admin/notify?status=PENDING&limit=1"), {
             cache: "no-store",
             credentials: "include",
           }),
-          fetch("/api/admin/support?mode=badge", {
+          fetch(withManagedBy("/api/admin/support?mode=badge"), {
             cache: "no-store",
             credentials: "include",
           }),
@@ -92,6 +138,32 @@ export default function AdminSidebar() {
       cancelled = true;
       window.clearInterval(t);
     };
+  }, [managedBy]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      setManagersLoading(true);
+      try {
+        const r = await fetch("/api/admin/managers", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const j = (await r.json().catch(() => ({}))) as ManagersResponse;
+        if (!r.ok || !j?.ok) return;
+        if (!cancelled) {
+          setManagers(Array.isArray(j.managers) ? j.managers : []);
+        }
+      } finally {
+        if (!cancelled) setManagersLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const item = (label: string, active: boolean, onClick: () => void, badgeCount?: number) => (
@@ -115,6 +187,27 @@ export default function AdminSidebar() {
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="text-xl font-semibold">Admin</div>
+      <label className="mt-1 block">
+        <div className="mb-1 text-[11px] uppercase tracking-[0.08em] text-white/45">Managed By</div>
+        <select
+          value={managedBy}
+          onChange={(e) => onChangeManagedBy(e.target.value)}
+          disabled={managersLoading}
+          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+        >
+          <option value="ALL" className="bg-black">
+            All users
+          </option>
+          <option value="UNASSIGNED" className="bg-black">
+            Unassigned
+          </option>
+          {managers.map((m) => (
+            <option key={m.id} value={m.id} className="bg-black">
+              {m.username || m.id.slice(0, 8)}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {item("Overview", tab === "overview", () => goTab("overview"))}
       {item("Users", tab === "users", () => goTab("users"))}
@@ -122,7 +215,7 @@ export default function AdminSidebar() {
       {item("Mining Pending", tab === "mining", () => goTab("mining"))}
       {item("Trade Permission", tab === "orders", () => goTab("orders"))}
       {item("Withdraw", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
-      {item("Notify", tab === "notify", () => goTab("notify"), pendingNotifyCount)}
+      {item("Notify", tab === "notify", () => goTab("notify"), tab === "notify" ? 0 : pendingNotifyCount)}
       {item(
         "Support",
         tab === "support",
@@ -131,7 +224,8 @@ export default function AdminSidebar() {
       )}
 
       <div className="mt-2 border-t border-white/10 pt-3">
-        {item("Manage Admin", false, goManageAdmin)}
+        {item("Manage Admin", pathname === "/admin/manage-admin", goManageAdmin)}
+        {item("Manage User", pathname === "/admin/manage-user", goManageUser)}
       </div>
 
       <div className="mt-auto border-t border-white/10 pt-3">

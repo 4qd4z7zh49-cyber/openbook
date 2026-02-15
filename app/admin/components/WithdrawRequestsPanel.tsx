@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Asset = "USDT" | "BTC" | "ETH" | "SOL" | "XRP";
 type WithdrawStatus = "PENDING" | "CONFIRMED" | "FROZEN";
@@ -63,6 +64,8 @@ function statusBadgeClass(status: WithdrawStatus) {
 }
 
 export default function WithdrawRequestsPanel() {
+  const sp = useSearchParams();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [filter, setFilter] = useState<FilterStatus>("ALL");
   const [rows, setRows] = useState<WithdrawRequest[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -78,6 +81,7 @@ export default function WithdrawRequestsPanel() {
       const params = new URLSearchParams();
       params.set("limit", "300");
       if (status !== "ALL") params.set("status", status);
+      if (managedBy.toUpperCase() !== "ALL") params.set("managedBy", managedBy);
       const r = await fetch(`/api/admin/withdraw-requests?${params.toString()}`, {
         cache: "no-store",
       });
@@ -94,7 +98,7 @@ export default function WithdrawRequestsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, managedBy]);
 
   useEffect(() => {
     void load(filter);

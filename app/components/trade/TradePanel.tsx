@@ -517,6 +517,9 @@ export default function TradePanel() {
   const tradeHistoryStorageKey = useMemo(() => tradeHistoryKeyForUser(currentUserId), [currentUserId]);
   const tradeNotiStorageKey = useMemo(() => tradeNotiKeyForUser(currentUserId), [currentUserId]);
   const tradeSessionStorageKey = useMemo(() => tradeSessionKeyForUser(currentUserId), [currentUserId]);
+  const resultModalId = resultModal?.id ?? "";
+  const resultModalRevealResult = Boolean(resultModal?.revealResult);
+  const runningSessionId = session?.id ?? "";
   const resultModalIsProfit = useMemo(
     () => (resultModal ? resultModal.resultUSDT >= 0 : false),
     [resultModal]
@@ -683,9 +686,9 @@ export default function TradePanel() {
   }, [openResultModalForSession, session, sessionPhase]);
 
   useEffect(() => {
-    if (!resultModal || resultModal.revealResult) return;
+    if (!resultModalId || resultModalRevealResult) return;
 
-    const modalId = resultModal.id;
+    const modalId = resultModalId;
 
     const rotate = window.setInterval(() => {
       setResultModal((prev) =>
@@ -716,7 +719,7 @@ export default function TradePanel() {
       window.clearInterval(rotate);
       window.clearTimeout(reveal);
     };
-  }, [resultModal?.id, resultModal?.revealResult]);
+  }, [resultModalId, resultModalRevealResult]);
 
   useEffect(() => {
     if (sessionPhase !== "ANALYZING") return;
@@ -808,7 +811,7 @@ export default function TradePanel() {
   }, [sessionPhase]);
 
   useEffect(() => {
-    if (!session || sessionPhase !== "RUNNING") return;
+    if (!runningSessionId || sessionPhase !== "RUNNING") return;
     if (!pendingSessionScrollRef.current) return;
 
     pendingSessionScrollRef.current = false;
@@ -823,7 +826,7 @@ export default function TradePanel() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [session?.id, sessionPhase]);
+  }, [runningSessionId, sessionPhase]);
 
   useEffect(() => {
     if (sessionPhase !== "CLAIMABLE" || !session) return;

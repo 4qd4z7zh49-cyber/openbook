@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { assertCanManageUser, requireAdminSession, supabaseAdmin } from "../_helpers";
+import {
+  assertCanManageUser,
+  isRootAdminRole,
+  requireAdminSession,
+  resolveRootManagedUserIds,
+  supabaseAdmin,
+} from "../_helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -29,10 +35,6 @@ type Body = {
 function parseBody(value: unknown): Body {
   if (!value || typeof value !== "object") return {};
   return value as Body;
-}
-
-function isRootAdmin(role: string) {
-  return role === "admin" || role === "superadmin";
 }
 
 function normalizeStatus(value: unknown): WithdrawStatus {
@@ -68,13 +70,17 @@ function toNumber(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function pendingCount(role: string, adminId: string) {
+async function pendingCount(role: string, adminId: string, visibleUserIds?: string[] | null) {
+  if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) return 0;
+
   let q = supabaseAdmin
     .from("withdraw_requests")
     .select("id", { count: "exact", head: true })
     .eq("status", "PENDING");
 
-  if (!isRootAdmin(role)) {
+  if (Array.isArray(visibleUserIds)) {
+    q = q.in("user_id", visibleUserIds);
+  } else if (!isRootAdminRole(role)) {
     q = q.eq("admin_id", adminId);
   }
 
@@ -151,8 +157,19 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const statusRaw = String(url.searchParams.get("status") || "").trim().toUpperCase();
     const userId = String(url.searchParams.get("userId") || "").trim();
+    const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
     const limitRaw = Number(url.searchParams.get("limit") || 300);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 300;
+    const visibleUserIds = isRootAdminRole(role)
+      ? await resolveRootManagedUserIds(managedByRaw)
+      : null;
+
+    if (Array.isArray(visibleUserIds) && visibleUserIds.length === 0) {
+      return NextResponse.json({ ok: true, pendingCount: 0, requests: [] });
+    }
+    if (userId && Array.isArray(visibleUserIds) && !visibleUserIds.includes(userId)) {
+      return NextResponse.json({ ok: true, pendingCount: 0, requests: [] });
+    }
 
     let q = supabaseAdmin
       .from("withdraw_requests")
@@ -166,8 +183,10 @@ export async function GET(req: Request) {
     if (userId) {
       q = q.eq("user_id", userId);
     }
-    if (!isRootAdmin(role)) {
+    if (!isRootAdminRole(role)) {
       q = q.eq("admin_id", adminId);
+    } else if (Array.isArray(visibleUserIds)) {
+      q = q.in("user_id", visibleUserIds);
     }
 
     const { data, error } = await q;
@@ -194,7 +213,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      pendingCount: await pendingCount(role, adminId),
+      pendingCount: await pendingCount(role, adminId, visibleUserIds),
       requests: rows.map((r) => ({
         id: String(r.id),
         userId: String(r.user_id),
@@ -249,7 +268,7 @@ export async function POST(req: Request) {
     const canManage = await assertCanManageUser(adminId, role, userId);
     if (!canManage) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!isRootAdmin(role) && String(row.admin_id || "") !== adminId) {
+    if (!isRootAdminRole(role) && String(row.admin_id || "") !== adminId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

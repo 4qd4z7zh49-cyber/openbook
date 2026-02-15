@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type UserRow = {
   id: string;
@@ -32,6 +33,7 @@ type NotifyListResp = {
   ok?: boolean;
   error?: string;
   pendingCount?: number;
+  unreadByUserId?: Record<string, number>;
   notifications?: NotifyRow[];
 };
 
@@ -62,7 +64,13 @@ function statusBadgeClass(status: NotifyStatus) {
     : "border-amber-300/30 bg-amber-500/10 text-amber-200";
 }
 
+function statusLabel(status: NotifyStatus) {
+  return status === "CONFIRMED" ? "READ" : "UNREAD";
+}
+
 export default function NotifyPanel() {
+  const sp = useSearchParams();
+  const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [users, setUsers] = useState<UserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState("");
@@ -76,6 +84,7 @@ export default function NotifyPanel() {
 
   const [rows, setRows] = useState<NotifyRow[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadByUserId, setUnreadByUserId] = useState<Record<string, number>>({});
   const [loadingRows, setLoadingRows] = useState(false);
   const [rowsErr, setRowsErr] = useState("");
 
@@ -88,7 +97,12 @@ export default function NotifyPanel() {
     setUsersLoading(true);
     setUsersErr("");
     try {
-      const r = await fetch("/api/admin/users", {
+      const params = new URLSearchParams();
+      if (managedBy.toUpperCase() !== "ALL") {
+        params.set("managedBy", managedBy);
+      }
+      const qs = params.toString();
+      const r = await fetch(`/api/admin/users${qs ? `?${qs}` : ""}`, {
         cache: "no-store",
         credentials: "include",
       });
@@ -99,14 +113,17 @@ export default function NotifyPanel() {
 
       const nextUsers = Array.isArray(j.users) ? j.users : [];
       setUsers(nextUsers);
-      setSelectedUserId((prev) => prev || nextUsers[0]?.id || "");
+      setSelectedUserId((prev) => {
+        if (prev && nextUsers.some((u) => u.id === prev)) return prev;
+        return nextUsers[0]?.id || "";
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load users";
       setUsersErr(message);
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [managedBy]);
 
   const loadRows = useCallback(async (userId = selectedUserId) => {
     setLoadingRows(true);
@@ -115,6 +132,7 @@ export default function NotifyPanel() {
       const params = new URLSearchParams();
       params.set("limit", "200");
       if (userId) params.set("userId", userId);
+      if (managedBy.toUpperCase() !== "ALL") params.set("managedBy", managedBy);
       const r = await fetch(`/api/admin/notify?${params.toString()}`, {
         cache: "no-store",
         credentials: "include",
@@ -124,14 +142,17 @@ export default function NotifyPanel() {
         throw new Error(j?.error || "Failed to load notifications");
       }
       setRows(Array.isArray(j.notifications) ? j.notifications : []);
-      setPendingCount(Number(j.pendingCount ?? 0));
+      const unreadMap = j.unreadByUserId && typeof j.unreadByUserId === "object" ? j.unreadByUserId : {};
+      setUnreadByUserId(unreadMap);
+      const unreadTotal = Object.values(unreadMap).reduce((sum, n) => sum + Number(n || 0), 0);
+      setPendingCount(Number(j.pendingCount ?? unreadTotal));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load notifications";
       setRowsErr(message);
     } finally {
       setLoadingRows(false);
     }
-  }, [selectedUserId]);
+  }, [selectedUserId, managedBy]);
 
   useEffect(() => {
     void loadUsers();
@@ -174,8 +195,17 @@ export default function NotifyPanel() {
         throw new Error(j?.error || "Failed to send notification");
       }
 
-      setRows((prev) => [j.notification as NotifyRow, ...prev].slice(0, 200));
-      setPendingCount(Number(j.pendingCount ?? pendingCount + 1));
+      const enriched = {
+        ...(j.notification as NotifyRow),
+        username: j.notification.username ?? selectedUser?.username ?? null,
+        email: j.notification.email ?? selectedUser?.email ?? null,
+      };
+      setRows((prev) => [enriched, ...prev].slice(0, 200));
+      setUnreadByUserId((prev) => ({
+        ...prev,
+        [selectedUserId]: Number(prev[selectedUserId] || 0) + 1,
+      }));
+      setPendingCount((prev) => Number(j.pendingCount ?? prev + 1));
       setSendInfo("Notification sent.");
       setSubject("");
       setMessage("");
@@ -217,6 +247,7 @@ export default function NotifyPanel() {
           <div className="max-h-[460px] space-y-2 overflow-auto pr-1">
             {users.map((u) => {
               const active = selectedUserId === u.id;
+              const unread = Number(unreadByUserId[u.id] ?? 0);
               return (
                 <button
                   key={u.id}
@@ -229,7 +260,14 @@ export default function NotifyPanel() {
                       : "border-white/10 bg-black/20 text-white/80 hover:bg-black/30",
                   ].join(" ")}
                 >
-                  <div className="text-sm font-semibold">{u.username || "-"}</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-sm font-semibold">{u.username || "-"}</div>
+                    {unread > 0 ? (
+                      <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+                        {unread}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-0.5 text-xs text-white/60">{u.email || "-"}</div>
                 </button>
               );
@@ -309,7 +347,7 @@ export default function NotifyPanel() {
                           statusBadgeClass(row.status),
                         ].join(" ")}
                       >
-                        {row.status}
+                        {statusLabel(row.status)}
                       </span>
                     </div>
 

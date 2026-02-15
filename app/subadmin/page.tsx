@@ -99,6 +99,13 @@ type DepositRequestActionResp = {
   request?: DepositRequestRow;
 };
 
+type PasswordResetResp = {
+  ok?: boolean;
+  error?: string;
+  generated?: boolean;
+  temporaryPassword?: string | null;
+};
+
 async function readJson<T>(res: Response): Promise<T> {
   try {
     return (await res.json()) as T;
@@ -199,6 +206,9 @@ export default function SubAdminPage() {
   const [depositRequestsInfo, setDepositRequestsInfo] = useState("");
   const [depositRequestActionId, setDepositRequestActionId] = useState("");
   const [pendingDepositCount, setPendingDepositCount] = useState(0);
+  const [passwordResetSavingUserId, setPasswordResetSavingUserId] = useState("");
+  const [passwordResetErr, setPasswordResetErr] = useState("");
+  const [passwordResetInfo, setPasswordResetInfo] = useState("");
 
   async function reloadUsers() {
     setLoading(true);
@@ -523,6 +533,52 @@ export default function SubAdminPage() {
     }
   };
 
+  const resetUserPassword = async (u: UserRow) => {
+    const input = window.prompt(
+      "Set new password. Leave blank and press OK to auto-generate a temporary password (min 8 chars).",
+      ""
+    );
+    if (input === null) return;
+
+    const nextPassword = String(input || "").trim();
+    if (nextPassword.length > 0 && nextPassword.length < 8) {
+      setPasswordResetErr("New password must be at least 8 characters.");
+      setPasswordResetInfo("");
+      return;
+    }
+
+    setPasswordResetSavingUserId(u.id);
+    setPasswordResetErr("");
+    setPasswordResetInfo("");
+
+    try {
+      const r = await fetch("/api/admin/reset-user-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: u.id,
+          newPassword: nextPassword || undefined,
+        }),
+      });
+      const j = await readJson<PasswordResetResp>(r);
+      if (!r.ok || !j?.ok) {
+        throw new Error(j?.error || "Failed to reset password");
+      }
+
+      const label = u.username ?? u.email ?? "User";
+      if (j.generated && j.temporaryPassword) {
+        setPasswordResetInfo(`Temporary password for ${label}: ${j.temporaryPassword}`);
+      } else {
+        setPasswordResetInfo(`Password reset completed for ${label}.`);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to reset password";
+      setPasswordResetErr(message);
+    } finally {
+      setPasswordResetSavingUserId("");
+    }
+  };
+
   return (
     <div>
       <div className="mb-5 flex items-start justify-between gap-3">
@@ -570,10 +626,12 @@ export default function SubAdminPage() {
 
           {loading ? <div className="text-white/60">Loading...</div> : null}
           {err ? <div className="text-red-400">{err}</div> : null}
+          {passwordResetErr ? <div className="mb-3 text-sm text-red-300">{passwordResetErr}</div> : null}
+          {passwordResetInfo ? <div className="mb-3 text-sm text-emerald-300">{passwordResetInfo}</div> : null}
 
           {!loading && !err ? (
             <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[980px]">
+              <table className="w-full min-w-[1060px]">
                 <thead className="bg-white/5 text-left text-white/60">
                   <tr>
                     <th className="px-3 py-3">USER</th>
@@ -581,21 +639,35 @@ export default function SubAdminPage() {
                     <th className="px-3 py-3 text-right">BALANCE (USDT)</th>
                     <th className="px-3 py-3">MANAGED BY</th>
                     <th className="px-3 py-3">CREATED AT</th>
+                    <th className="px-3 py-3 text-right">ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} className="border-t border-white/10">
-                      <td className="px-3 py-3">{u.username || "-"}</td>
-                      <td className="px-3 py-3">{u.email || "-"}</td>
-                      <td className="px-3 py-3 text-right">{fmtAsset(u.usdt ?? u.balance, "USDT")}</td>
-                      <td className="px-3 py-3">{fmtManagedBy(u)}</td>
-                      <td className="px-3 py-3">{fmtDateTime(u.created_at)}</td>
-                    </tr>
-                  ))}
+                  {users.map((u) => {
+                    const isResetting = passwordResetSavingUserId === u.id;
+                    return (
+                      <tr key={u.id} className="border-t border-white/10">
+                        <td className="px-3 py-3">{u.username || "-"}</td>
+                        <td className="px-3 py-3">{u.email || "-"}</td>
+                        <td className="px-3 py-3 text-right">{fmtAsset(u.usdt ?? u.balance, "USDT")}</td>
+                        <td className="px-3 py-3">{fmtManagedBy(u)}</td>
+                        <td className="px-3 py-3">{fmtDateTime(u.created_at)}</td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => void resetUserPassword(u)}
+                            disabled={isResetting}
+                            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-blue-500"
+                          >
+                            {isResetting ? "Resetting..." : "Reset Password"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {users.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-6 text-white/60" colSpan={5}>
+                      <td className="px-3 py-6 text-white/60" colSpan={6}>
                         No users found.
                       </td>
                     </tr>

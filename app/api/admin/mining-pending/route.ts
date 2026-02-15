@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession, supabaseAdmin } from "../_helpers";
+import {
+  isRootAdminRole,
+  requireAdminSession,
+  resolveRootManagedUserIds,
+  supabaseAdmin,
+} from "../_helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +57,8 @@ export async function GET(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { adminId, role } = auth;
+  const url = new URL(req.url);
+  const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
 
   let query = supabaseAdmin
     .from("mining_orders")
@@ -59,7 +66,7 @@ export async function GET(req: Request) {
     .eq("status", "PENDING")
     .order("created_at", { ascending: false });
 
-  if (role !== "admin" && role !== "superadmin") {
+  if (!isRootAdminRole(role)) {
     const { data: users, error: uErr } = await supabaseAdmin
       .from("profiles")
       .select("id")
@@ -70,6 +77,12 @@ export async function GET(req: Request) {
     const ids = (users || []).map((x: { id: string }) => x.id);
     if (ids.length === 0) return NextResponse.json({ rows: [] });
     query = query.in("user_id", ids);
+  } else {
+    const ids = await resolveRootManagedUserIds(managedByRaw);
+    if (Array.isArray(ids)) {
+      if (ids.length === 0) return NextResponse.json({ rows: [] });
+      query = query.in("user_id", ids);
+    }
   }
 
   const { data, error } = await query;
