@@ -65,7 +65,7 @@ type HistoryRecord = {
   claimedAt: number;
 };
 
-const HISTORY_KEY = "openbookpro.trade.history.v2";
+const HISTORY_KEY_PREFIX = "openbookpro.trade.history.v3";
 const TRADE_NOTI_KEY_PREFIX = "openbookpro.trade.notifications.v2";
 
 type TradeNotificationStatus = "PENDING" | "CONFIRMED";
@@ -109,10 +109,17 @@ function formatMoney(v: number) {
   });
 }
 
-function loadHistory(): HistoryRecord[] {
+function tradeHistoryKeyForUser(userId: string | null | undefined) {
+  const id = String(userId || "").trim();
+  if (!id) return "";
+  return `${HISTORY_KEY_PREFIX}.${id}`;
+}
+
+function loadHistory(storageKey: string): HistoryRecord[] {
+  if (!storageKey) return [];
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -128,9 +135,10 @@ function loadHistory(): HistoryRecord[] {
   }
 }
 
-function saveHistory(next: HistoryRecord[]) {
+function saveHistory(storageKey: string, next: HistoryRecord[]) {
+  if (!storageKey) return;
   if (typeof window === "undefined") return;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  localStorage.setItem(storageKey, JSON.stringify(next));
 }
 
 function tradeNotiKeyForUser(userId: string | null | undefined) {
@@ -363,6 +371,8 @@ export default function TradePanel() {
   const [currentUserId, setCurrentUserId] = useState("");
   const sessionRef = useRef<TradeSession | null>(null);
   const autoSettledLossSessionIdRef = useRef("");
+  const lastHistoryStorageKeyRef = useRef("");
+  const tradeHistoryStorageKey = useMemo(() => tradeHistoryKeyForUser(currentUserId), [currentUserId]);
   const tradeNotiStorageKey = useMemo(() => tradeNotiKeyForUser(currentUserId), [currentUserId]);
 
   const sessionBusy = sessionPhase === "ANALYZING" || sessionPhase === "RUNNING";
@@ -422,14 +432,26 @@ export default function TradePanel() {
   }, []);
 
   useEffect(() => {
-    setHistory(loadHistory());
+    if (!tradeHistoryStorageKey) {
+      setHistory([]);
+      setHistoryLoaded(false);
+      lastHistoryStorageKeyRef.current = "";
+      return;
+    }
+    setHistory(loadHistory(tradeHistoryStorageKey));
     setHistoryLoaded(true);
-  }, []);
+    lastHistoryStorageKeyRef.current = "";
+  }, [tradeHistoryStorageKey]);
 
   useEffect(() => {
     if (!historyLoaded) return;
-    saveHistory(history);
-  }, [history, historyLoaded]);
+    if (!tradeHistoryStorageKey) return;
+    if (lastHistoryStorageKeyRef.current !== tradeHistoryStorageKey) {
+      lastHistoryStorageKeyRef.current = tradeHistoryStorageKey;
+      return;
+    }
+    saveHistory(tradeHistoryStorageKey, history);
+  }, [history, historyLoaded, tradeHistoryStorageKey]);
 
   useEffect(() => {
     sessionRef.current = session;
