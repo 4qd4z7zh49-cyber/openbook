@@ -123,7 +123,12 @@ export default function AdminSidebar() {
       {item("Trade Permission", tab === "orders", () => goTab("orders"))}
       {item("Withdraw", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
       {item("Notify", tab === "notify", () => goTab("notify"), pendingNotifyCount)}
-      {item("Support", tab === "support", () => goTab("support"), pendingSupportCount)}
+      {item(
+        "Support",
+        tab === "support",
+        () => goTab("support"),
+        tab === "support" ? 0 : pendingSupportCount
+      )}
 
       <div className="mt-2 border-t border-white/10 pt-3">
         {item("Manage Admin", false, goManageAdmin)}

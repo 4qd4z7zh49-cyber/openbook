@@ -246,7 +246,7 @@ function mapSupportRows(rows: SupportRow[]): NotificationItem[] {
       id: String(row.id),
       source: "SUPPORT",
       status,
-      title: isPending ? "Support Reply" : "Support Updated",
+      title: isPending ? "Unread Support Message" : "Support Updated",
       detail: preview(fullText),
       fullText,
       createdAt: String(row.last_message_at || row.updated_at || row.created_at || ""),

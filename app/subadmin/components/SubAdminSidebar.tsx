@@ -144,7 +144,7 @@ export default function SubAdminSidebar() {
                     {pendingNotifyCount}
                   </span>
                 ) : null}
-                {it.key === "support" && pendingSupportCount > 0 ? (
+                {it.key === "support" && tab !== "support" && pendingSupportCount > 0 ? (
                   <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                     {pendingSupportCount}
                   </span>

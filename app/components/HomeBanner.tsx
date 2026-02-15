@@ -207,6 +207,11 @@ function sourceLabel(source: NotificationSource) {
   return "Trade";
 }
 
+function notificationStatusLabel(item: NotificationItem) {
+  if (item.source === "SUPPORT" && item.status === "PENDING") return "UNREAD";
+  return item.status;
+}
+
 export default function HomeBanner({
   theme,
   onToggleTheme,
@@ -666,7 +671,7 @@ export default function HomeBanner({
                           statusBadgeClass(item.status, theme),
                         ].join(" ")}
                       >
-                        {item.status}
+                        {notificationStatusLabel(item)}
                       </span>
                     </div>
                     <div

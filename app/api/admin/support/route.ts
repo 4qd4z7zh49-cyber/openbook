@@ -236,7 +236,7 @@ export async function GET(req: Request) {
       });
     }
 
-    const selected =
+    let selected =
       (threadId ? threads.find((row) => String(row.id) === threadId) : null) ||
       threads[0] ||
       null;
@@ -245,6 +245,37 @@ export async function GET(req: Request) {
     if (selected) {
       if (!(await canManageThread(role, adminId, selected))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      // When admin/sub-admin opens a chat that has unread user messages,
+      // mark that thread as read for admin side (badge should disappear).
+      if (normalizeStatus(selected.status) === "OPEN" && normalizeSender(selected.last_sender) === "USER") {
+        const now = new Date().toISOString();
+        const { error: seenErr } = await supabaseAdmin
+          .from("support_threads")
+          .update({
+            last_sender: "ADMIN",
+            updated_at: now,
+          })
+          .eq("id", selected.id)
+          .eq("status", "OPEN")
+          .eq("last_sender", "USER");
+
+        if (!seenErr) {
+          selected = {
+            ...selected,
+            last_sender: "ADMIN",
+            updated_at: now,
+          };
+          const idx = threads.findIndex((row) => row.id === selected?.id);
+          if (idx >= 0) {
+            threads[idx] = {
+              ...threads[idx],
+              last_sender: "ADMIN",
+              updated_at: now,
+            };
+          }
+        }
       }
 
       const { data, error } = await supabaseAdmin

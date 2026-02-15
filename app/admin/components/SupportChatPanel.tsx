@@ -425,7 +425,7 @@ export default function SupportChatPanel() {
                     </div>
                     {thread.needsReply ? (
                       <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
-                        Pending
+                        Unread
                       </span>
                     ) : null}
                   </div>
