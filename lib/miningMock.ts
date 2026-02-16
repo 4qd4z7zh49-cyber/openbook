@@ -51,7 +51,7 @@ export const MINING_PLANS: MiningPlan[] = [
     id: "m5",
     name: "AI Smart Start Vault",
     cycleDays: 5,
-    min: 3_000,
+    min: 500,
     max: 999_999,
     dailyRate: 0.015,
     abortFee: 0.05,
