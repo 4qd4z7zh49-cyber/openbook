@@ -6,6 +6,7 @@ import {
   resolveRootManagedUserIds,
   supabaseAdmin,
 } from "../_helpers";
+import { sendOneSignalPush } from "@/lib/onesignalServer";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,13 @@ function normalizeAsset(value: unknown): Asset {
 function toNumber(value: unknown) {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function resolveAppBaseUrl(req: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "").trim();
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
 }
 
 async function pendingCount(role: string, adminId: string, visibleUserIds?: string[] | null) {
@@ -304,6 +312,30 @@ export async function POST(req: Request) {
         const message = applyErr instanceof Error ? applyErr.message : "Failed to apply deposit";
         return NextResponse.json({ error: message }, { status: 500 });
       }
+    }
+
+    try {
+      const appBase = resolveAppBaseUrl(req);
+      const asset = normalizeAsset(updated.asset);
+      const amount = toNumber(updated.amount).toLocaleString(undefined, { maximumFractionDigits: 8 });
+      const text =
+        targetStatus === "CONFIRMED"
+          ? `Your deposit ${amount} ${asset} has been confirmed.`
+          : `Your deposit ${amount} ${asset} was declined.`;
+
+      await sendOneSignalPush({
+        externalUserIds: [String(updated.user_id)],
+        title: `Deposit ${targetStatus === "CONFIRMED" ? "Confirmed" : "Declined"}`,
+        message: text,
+        url: `${appBase}/deposit`,
+        data: {
+          source: "DEPOSIT",
+          requestId: String(updated.id),
+          status: targetStatus,
+        },
+      });
+    } catch (pushError) {
+      console.error("deposit push send error:", pushError);
     }
 
     return NextResponse.json({

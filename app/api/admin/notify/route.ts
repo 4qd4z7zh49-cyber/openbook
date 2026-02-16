@@ -7,6 +7,7 @@ import {
   resolveRootManagedUserIds,
   supabaseAdmin,
 } from "../_helpers";
+import { sendOneSignalPush } from "@/lib/onesignalServer";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,13 @@ function normalizeStatus(value: unknown): NotifyStatus {
     .toUpperCase();
   if (s === "CONFIRMED" || s === "READ") return "CONFIRMED";
   return "PENDING";
+}
+
+function resolveAppBaseUrl(req: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "").trim();
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
 }
 
 async function pendingCount(role: string, adminId: string, visibleUserIds?: string[] | null) {
@@ -244,6 +252,22 @@ export async function POST(req: Request) {
     if (profileRow) {
       username = profileRow.username ? String(profileRow.username) : null;
       email = profileRow.email ? String(profileRow.email) : null;
+    }
+
+    try {
+      const appBase = resolveAppBaseUrl(req);
+      await sendOneSignalPush({
+        externalUserIds: [userId],
+        title: subject || "OpenBookPro Notification",
+        message: message || "You have a new notification.",
+        url: `${appBase}/home`,
+        data: {
+          source: "NOTIFY",
+          notificationId: String(data.id),
+        },
+      });
+    } catch (pushError) {
+      console.error("notify push send error:", pushError);
     }
 
     return NextResponse.json({

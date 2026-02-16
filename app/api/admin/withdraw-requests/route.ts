@@ -6,6 +6,7 @@ import {
   resolveRootManagedUserIds,
   supabaseAdmin,
 } from "../_helpers";
+import { sendOneSignalPush } from "@/lib/onesignalServer";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,13 @@ function normalizeAsset(value: unknown): Asset {
 function toNumber(value: unknown) {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function resolveAppBaseUrl(req: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "").trim();
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
 }
 
 async function pendingCount(role: string, adminId: string, visibleUserIds?: string[] | null) {
@@ -313,6 +321,33 @@ export async function POST(req: Request) {
       .maybeSingle();
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
     if (!updated) return NextResponse.json({ error: "Request update failed" }, { status: 409 });
+
+    try {
+      const appBase = resolveAppBaseUrl(req);
+      const asset = normalizeAsset(updated.asset);
+      const amount = toNumber(updated.amount).toLocaleString(undefined, { maximumFractionDigits: 8 });
+      const status = normalizeStatus(updated.status);
+      const text =
+        status === "CONFIRMED"
+          ? `Your withdraw ${amount} ${asset} has been confirmed.`
+          : status === "FROZEN"
+            ? `Your withdraw ${amount} ${asset} is frozen.`
+            : `Your withdraw ${amount} ${asset} is now pending.`;
+
+      await sendOneSignalPush({
+        externalUserIds: [String(updated.user_id)],
+        title: `Withdraw ${status}`,
+        message: text,
+        url: `${appBase}/withdraw`,
+        data: {
+          source: "WITHDRAW",
+          requestId: String(updated.id),
+          status,
+        },
+      });
+    } catch (pushError) {
+      console.error("withdraw push send error:", pushError);
+    }
 
     return NextResponse.json({
       ok: true,

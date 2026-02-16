@@ -4,6 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getUserAuthHeaders } from "@/lib/clientAuth";
+import {
+  isOneSignalConfigured,
+  oneSignalGetPushState,
+  oneSignalLogin,
+  oneSignalRequestPermission,
+  oneSignalSetOptIn,
+  type OneSignalPushState,
+} from "@/lib/onesignalClient";
 import { supabase } from "@/lib/supabaseClient";
 
 type Theme = "dark" | "light";
@@ -163,6 +171,14 @@ export default function SettingsPage() {
   const [securityInfo, setSecurityInfo] = useState("");
 
   const [logoutAllLoading, setLogoutAllLoading] = useState(false);
+  const [pushState, setPushState] = useState<OneSignalPushState>({
+    configured: isOneSignalConfigured(),
+    supported: false,
+    permissionGranted: false,
+    optedIn: false,
+    subscriptionId: null,
+  });
+  const [pushLoading, setPushLoading] = useState(false);
 
   const isLight = theme === "light";
 
@@ -211,6 +227,26 @@ export default function SettingsPage() {
           ? (userData.user.user_metadata as Record<string, unknown>)
           : {};
       setSettings(normalizeSettings(metadata[SETTINGS_METADATA_KEY]));
+
+      if (isOneSignalConfigured()) {
+        try {
+          const state = await oneSignalGetPushState();
+          setPushState(state);
+          const uid = String(json.profile.id || "").trim();
+          if (uid && state.permissionGranted) {
+            await oneSignalLogin(uid);
+          }
+        } catch {
+          setPushState({
+            configured: true,
+            supported: false,
+            permissionGranted: false,
+            optedIn: false,
+            subscriptionId: null,
+          });
+        }
+      }
+
       setError("");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load settings";
@@ -360,6 +396,40 @@ export default function SettingsPage() {
       setError(message);
     } finally {
       setLogoutAllLoading(false);
+    }
+  };
+
+  const enablePhonePush = async () => {
+    try {
+      setPushLoading(true);
+      setError("");
+
+      const state = await oneSignalRequestPermission();
+      setPushState(state);
+
+      const uid = String(profile?.id || "").trim();
+      if (uid && state.permissionGranted) {
+        await oneSignalLogin(uid);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to enable phone push";
+      setError(message);
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const disablePhonePush = async () => {
+    try {
+      setPushLoading(true);
+      setError("");
+      const state = await oneSignalSetOptIn(false);
+      setPushState(state);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to disable phone push";
+      setError(message);
+    } finally {
+      setPushLoading(false);
     }
   };
 
@@ -529,6 +599,50 @@ export default function SettingsPage() {
             <section className={`rounded-2xl border p-4 ${isLight ? "border-slate-300 bg-white" : "border-white/10 bg-white/5"}`}>
               <h2 className={`text-lg font-semibold ${isLight ? "text-slate-900" : "text-white"}`}>3. Notifications</h2>
               <div className="mt-3 space-y-2 text-sm">
+                <div
+                  className={`rounded-xl border px-3 py-2 ${
+                    isLight ? "border-slate-300 bg-slate-50 text-slate-800" : "border-white/10 bg-black/30 text-white/85"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Phone push notification</span>
+                    <span className="text-xs opacity-80">
+                      {!pushState.configured
+                        ? "Not configured"
+                        : !pushState.supported
+                          ? "Not supported on this browser"
+                          : pushState.optedIn
+                            ? "Enabled"
+                            : pushState.permissionGranted
+                              ? "Disabled"
+                              : "Permission needed"}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void enablePhonePush()}
+                      disabled={pushLoading || !pushState.configured}
+                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {pushLoading ? "Working..." : "Enable Push"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void disablePhonePush()}
+                      disabled={pushLoading || !pushState.configured}
+                      className="inline-flex items-center justify-center rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Disable Push
+                    </button>
+                  </div>
+                  {pushState.configured && !pushState.supported ? (
+                    <div className="mt-2 text-xs text-amber-300">
+                      Push is not supported on this browser. On iPhone, install the app to Home Screen first.
+                    </div>
+                  ) : null}
+                </div>
+
                 <label className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
                   isLight ? "border-slate-300 bg-slate-50 text-slate-800" : "border-white/10 bg-black/30 text-white/85"
                 }`}>
@@ -712,4 +826,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

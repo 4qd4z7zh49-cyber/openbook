@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession, supabaseAdmin, assertCanManageUser } from "../_helpers";
+import { sendOneSignalPush } from "@/lib/onesignalServer";
+
+function resolveAppBaseUrl(req: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "").trim();
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
+}
 
 export async function POST(req: Request) {
   const auth = requireAdminSession(req);
@@ -34,6 +42,23 @@ export async function POST(req: Request) {
       .eq("id", id);
 
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+
+    try {
+      const appBase = resolveAppBaseUrl(req);
+      await sendOneSignalPush({
+        externalUserIds: [String(mo.user_id)],
+        title: "Mining Approved",
+        message: "Your mining order is now active.",
+        url: `${appBase}/mining`,
+        data: {
+          source: "MINING",
+          miningId: id,
+          status: "ACTIVE",
+        },
+      });
+    } catch (pushError) {
+      console.error("mining push send error:", pushError);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {

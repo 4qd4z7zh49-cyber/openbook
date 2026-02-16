@@ -7,6 +7,7 @@ import {
   resolveRootManagedUserIds,
   supabaseAdmin,
 } from "../_helpers";
+import { sendOneSignalPush } from "@/lib/onesignalServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,13 @@ function normalizeStatus(value: unknown): ThreadStatus {
 
 function normalizeSender(value: unknown): SenderRole {
   return String(value || "").toUpperCase() === "ADMIN" ? "ADMIN" : "USER";
+}
+
+function resolveAppBaseUrl(req: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "").trim();
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
 }
 
 function resolveSupportAuth(req: Request) {
@@ -440,6 +448,24 @@ export async function POST(req: Request) {
       })
       .eq("id", thread.id);
     if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+
+    try {
+      const appBase = resolveAppBaseUrl(req);
+      const previewText = message || "You have a new support reply.";
+      await sendOneSignalPush({
+        externalUserIds: [String(thread.user_id)],
+        title: "OpenBookPro Support",
+        message: previewText,
+        url: `${appBase}/support`,
+        data: {
+          source: "SUPPORT",
+          threadId: String(thread.id),
+          messageId: String(msg.id),
+        },
+      });
+    } catch (pushError) {
+      console.error("support push send error:", pushError);
+    }
 
     return NextResponse.json({
       ok: true,
