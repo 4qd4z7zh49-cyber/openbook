@@ -2,10 +2,18 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<ResetPasswordFallback />}>
+      <ResetPasswordPageInner />
+    </Suspense>
+  );
+}
+
+function ResetPasswordPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code");
@@ -197,6 +205,19 @@ export default function ResetPasswordPage() {
               </Link>
             </p>
           </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordFallback() {
+  return (
+    <div style={styles.page}>
+      <div style={styles.shell}>
+        <div style={styles.card}>
+          <h1 style={styles.h1}>Reset Password</h1>
+          <div style={styles.infoBox}>Loading reset page...</div>
         </div>
       </div>
     </div>
