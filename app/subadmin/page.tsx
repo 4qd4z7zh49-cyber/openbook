@@ -206,6 +206,7 @@ export default function SubAdminPage() {
   const [depositRequestsInfo, setDepositRequestsInfo] = useState("");
   const [depositRequestActionId, setDepositRequestActionId] = useState("");
   const [pendingDepositCount, setPendingDepositCount] = useState(0);
+  const [depositRequestUserFilter, setDepositRequestUserFilter] = useState("ALL");
   const [passwordResetSavingUserId, setPasswordResetSavingUserId] = useState("");
   const [passwordResetErr, setPasswordResetErr] = useState("");
   const [passwordResetInfo, setPasswordResetInfo] = useState("");
@@ -455,10 +456,6 @@ export default function SubAdminPage() {
     setTopupErr("");
   };
 
-  const selectedUserRequests = useMemo(() => {
-    if (!selectedUser) return [];
-    return depositRequests.filter((r) => r.userId === selectedUser.id);
-  }, [depositRequests, selectedUser]);
   const pendingByUserId = useMemo(() => {
     const map = new Map<string, number>();
     depositRequests.forEach((r) => {
@@ -468,6 +465,37 @@ export default function SubAdminPage() {
     });
     return map;
   }, [depositRequests]);
+  const requestUserOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{ id: string; label: string }> = [];
+
+    depositRequests.forEach((r) => {
+      const id = String(r.userId || "").trim();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const matched = users.find((u) => u.id === id);
+      const username = String(r.username || matched?.username || id.slice(0, 8));
+      const email = String(r.email || matched?.email || "").trim();
+      rows.push({
+        id,
+        label: email ? `${username} (${email})` : username,
+      });
+    });
+
+    return rows;
+  }, [depositRequests, users]);
+  const filteredDepositRequests = useMemo(() => {
+    if (depositRequestUserFilter === "ALL") return depositRequests;
+    return depositRequests.filter((r) => r.userId === depositRequestUserFilter);
+  }, [depositRequestUserFilter, depositRequests]);
+
+  useEffect(() => {
+    if (depositRequestUserFilter === "ALL") return;
+    const stillExists = depositRequests.some((r) => r.userId === depositRequestUserFilter);
+    if (!stillExists) {
+      setDepositRequestUserFilter("ALL");
+    }
+  }, [depositRequestUserFilter, depositRequests]);
 
   const confirmTopup = async () => {
     if (!selectedUser) return;
@@ -587,7 +615,7 @@ export default function SubAdminPage() {
             {tab === "overview"
               ? "Overview"
               : tab === "topups"
-                ? "Topups"
+                ? "Deposit Permission"
                 : tab === "mining"
                   ? "Mining Pending"
                   : tab === "orders"
@@ -684,12 +712,14 @@ export default function SubAdminPage() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-base font-semibold">
-                Topups
+                Deposit Permission
                 <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
                   {pendingDepositCount}
                 </span>
               </div>
-              <div className="mt-1 text-sm text-white/60">Users under your management</div>
+              <div className="mt-1 text-sm text-white/60">
+                Manage balances in More, and approve/decline deposit requests below.
+              </div>
             </div>
             <button
               type="button"
@@ -747,6 +777,98 @@ export default function SubAdminPage() {
             </div>
           </div>
 
+          <div className="mb-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold">Deposit Request Queue</div>
+                <div className="mt-1 text-xs text-white/60">
+                  Approve or decline pending deposit requests.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-white/60" htmlFor="sub-topups-deposit-request-user-filter">
+                  User
+                </label>
+                <select
+                  id="sub-topups-deposit-request-user-filter"
+                  value={depositRequestUserFilter}
+                  onChange={(e) => setDepositRequestUserFilter(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none"
+                >
+                  <option value="ALL" className="bg-black">
+                    All pending
+                  </option>
+                  {requestUserOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-black">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredDepositRequests.length === 0 ? (
+              <div className="mt-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/60">
+                No pending deposit requests for this filter.
+              </div>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[900px]">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-white/55">
+                      <th className="py-2">User</th>
+                      <th className="py-2">Email</th>
+                      <th className="py-2">Asset</th>
+                      <th className="py-2 text-right">Amount</th>
+                      <th className="py-2">Wallet</th>
+                      <th className="py-2">Requested</th>
+                      <th className="py-2 pr-1 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDepositRequests.map((req) => {
+                      const user = users.find((u) => u.id === req.userId);
+                      const username = req.username || user?.username || "-";
+                      const email = req.email || user?.email || "-";
+
+                      return (
+                        <tr key={req.id} className="border-t border-white/10 text-sm">
+                          <td className="py-2">{username}</td>
+                          <td className="py-2">{email}</td>
+                          <td className="py-2">{req.asset}</td>
+                          <td className="py-2 text-right">{fmtAsset(req.amount, req.asset)}</td>
+                          <td className="max-w-[220px] py-2 text-xs text-white/70 break-all">{req.walletAddress}</td>
+                          <td className="py-2 text-xs text-white/70">{fmtDateTime(req.createdAt)}</td>
+                          <td className="py-2 pr-1 text-right">
+                            <div className="inline-flex max-w-[220px] flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                disabled={depositRequestActionId === req.id}
+                                onClick={() => void processDepositRequest(req.id, "APPROVE")}
+                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-60"
+                              >
+                                {depositRequestActionId === req.id ? "Processing..." : "Approve"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={depositRequestActionId === req.id}
+                                onClick={() => void processDepositRequest(req.id, "DECLINE")}
+                                className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-60"
+                              >
+                                {depositRequestActionId === req.id ? "Processing..." : "Decline"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {loading ? <div className="text-white/60">Loading...</div> : null}
           {err ? <div className="text-red-400">{err}</div> : null}
           {topupInfo ? <div className="mb-3 text-emerald-300">{topupInfo}</div> : null}
@@ -766,7 +888,7 @@ export default function SubAdminPage() {
                       <th className="py-3 text-right">ETH</th>
                       <th className="py-3 text-right">SOL</th>
                       <th className="py-3 text-right">XRP</th>
-                      <th className="py-3 text-right">ACTION</th>
+                      <th className="py-3 pr-1 text-right">ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -781,16 +903,21 @@ export default function SubAdminPage() {
                           <td className="py-3 text-right">{fmtAsset(u.eth, "ETH")}</td>
                           <td className="py-3 text-right">{fmtAsset(u.sol, "SOL")}</td>
                           <td className="py-3 text-right">{fmtAsset(u.xrp, "XRP")}</td>
-                          <td className="py-3 text-right">
-                            <div className="relative inline-block">
+                          <td className="py-3 pr-1 text-right">
+                            <div className="inline-flex max-w-[220px] flex-wrap items-center justify-end gap-2">
                               {pendingCount > 0 ? (
-                                <span className="absolute -top-2 -right-2 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                                  {pendingCount}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setDepositRequestUserFilter(u.id)}
+                                  className="rounded-full border border-rose-400/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 whitespace-nowrap"
+                                >
+                                  Requests {pendingCount}
+                                </button>
                               ) : null}
                               <button
+                                type="button"
                                 onClick={() => openTopup(u)}
-                                className="rounded-full bg-yellow-500 px-4 py-2 font-semibold text-black"
+                                className="rounded-full bg-yellow-500 px-3 py-1.5 text-sm font-semibold text-black whitespace-nowrap"
                               >
                                 More
                               </button>
@@ -815,7 +942,7 @@ export default function SubAdminPage() {
                   <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0b0b] p-5">
                     <div className="text-lg font-semibold">User Information</div>
                     <div className="mt-1 text-sm text-white/60">
-                      Review user info, process topup/deduct and handle deposit requests.
+                      Review user info and adjust balances.
                     </div>
 
                     <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3 text-sm">
@@ -914,54 +1041,6 @@ export default function SubAdminPage() {
                     />
 
                     {topupErr ? <div className="mt-3 text-sm text-red-300">{topupErr}</div> : null}
-
-                    <div className="mt-4">
-                      <div className="mb-2 text-sm font-semibold">Deposit Requests</div>
-                      <div className="mb-2 text-xs text-white/60">
-                        Pending requests for this user: {selectedUserRequests.length}
-                      </div>
-
-                      {selectedUserRequests.length === 0 ? (
-                        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
-                          No pending deposit request.
-                        </div>
-                      ) : (
-                        <div className="max-h-44 space-y-2 overflow-auto">
-                          {selectedUserRequests.map((req) => (
-                            <div
-                              key={req.id}
-                              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="font-semibold text-white">
-                                  {req.asset} · {fmtAsset(req.amount, req.asset)}
-                                </div>
-                                <div className="text-white/50">{fmtDateTime(req.createdAt)}</div>
-                              </div>
-                              <div className="mt-1 text-white/50 break-all">{req.walletAddress}</div>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  disabled={depositRequestActionId === req.id}
-                                  onClick={() => void processDepositRequest(req.id, "APPROVE")}
-                                  className="rounded-lg bg-emerald-600 px-2 py-1 font-semibold text-white disabled:opacity-60"
-                                >
-                                  {depositRequestActionId === req.id ? "Processing..." : "Approve"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={depositRequestActionId === req.id}
-                                  onClick={() => void processDepositRequest(req.id, "DECLINE")}
-                                  className="rounded-lg bg-rose-600 px-2 py-1 font-semibold text-white disabled:opacity-60"
-                                >
-                                  {depositRequestActionId === req.id ? "Processing..." : "Decline"}
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
 
                     <div className="mt-4 flex justify-end gap-2">
                       <button

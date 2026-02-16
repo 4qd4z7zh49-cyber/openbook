@@ -13,14 +13,16 @@ export default function LoginClient() {
   const router = useRouter();
   const params = useSearchParams();
   const created = params.get("created");
+  const reset = params.get("reset");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const createdMsg = useMemo(() => {
+  const statusMsg = useMemo(() => {
+    if (reset === "1") return "Password reset completed. Please log in with your new password.";
     if (created === "1") return "Account created. Please log in.";
     return "";
-  }, [created]);
+  }, [created, reset]);
 
   async function handleLogin(e?: React.FormEvent) {
     e?.preventDefault();
@@ -90,7 +92,13 @@ export default function LoginClient() {
               </button>
             </div>
 
-            {createdMsg ? <div style={styles.infoBox}>{createdMsg}</div> : null}
+            <div style={styles.forgotRow}>
+              <Link href="/forgot-password" style={styles.forgotLink}>
+                Forgot password?
+              </Link>
+            </div>
+
+            {statusMsg ? <div style={styles.infoBox}>{statusMsg}</div> : null}
             {error ? <div style={styles.errorBox}>{error}</div> : null}
 
             <button
@@ -216,6 +224,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.25)",
     color: "white",
     cursor: "pointer",
+  },
+  forgotRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: -4,
+  },
+  forgotLink: {
+    fontSize: 13,
+    color: "#93c5fd",
+    textDecoration: "underline",
   },
   primaryBtn: {
     height: 56,
