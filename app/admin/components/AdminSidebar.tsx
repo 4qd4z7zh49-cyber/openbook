@@ -210,14 +210,19 @@ export default function AdminSidebar() {
       </label>
 
       {item("Overview", tab === "overview", () => goTab("overview"))}
-      {item("Users", tab === "users", () => goTab("users"))}
-      {item("Topups", tab === "topups", () => goTab("topups"), pendingDepositCount)}
-      {item("Mining Pending", tab === "mining", () => goTab("mining"))}
+      {item("User Control", tab === "users", () => goTab("users"))}
+      {item("Deposit Permission", tab === "topups", () => goTab("topups"), pendingDepositCount)}
+      {item("Mining Permission", tab === "mining", () => goTab("mining"))}
       {item("Trade Permission", tab === "orders", () => goTab("orders"))}
-      {item("Withdraw", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
-      {item("Notify", tab === "notify", () => goTab("notify"), tab === "notify" ? 0 : pendingNotifyCount)}
+      {item("Withdraw Permission", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
       {item(
-        "Support",
+        "Mail Notify",
+        tab === "notify",
+        () => goTab("notify"),
+        tab === "notify" ? 0 : pendingNotifyCount
+      )}
+      {item(
+        "Customer Support",
         tab === "support",
         () => goTab("support"),
         tab === "support" ? 0 : pendingSupportCount

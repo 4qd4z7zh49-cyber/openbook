@@ -16,12 +16,12 @@ type DepositRequestBadgeResponse = {
 
 const items: Item[] = [
   { key: "overview", label: "Overview" },
-  { key: "topups", label: "Topups" },
-  { key: "mining", label: "Mining" },
+  { key: "topups", label: "Deposit Permission" },
+  { key: "mining", label: "Mining Permission" },
   { key: "orders", label: "Trade Permission" },
-  { key: "withdraw", label: "Withdraw" },
-  { key: "notify", label: "Notify" },
-  { key: "support", label: "Support" },
+  { key: "withdraw", label: "Withdraw Permission" },
+  { key: "notify", label: "Mail Notify" },
+  { key: "support", label: "Customer Support" },
 ];
 
 export default function SubAdminSidebar() {
