@@ -90,6 +90,12 @@ type PasswordResetResponse = {
   temporaryPassword?: string | null;
 };
 
+type DeleteUserResponse = {
+  ok?: boolean;
+  error?: string;
+  userId?: string;
+};
+
 type DepositRequestRow = {
   id: string;
   userId: string;
@@ -288,6 +294,9 @@ export default function AdminPage() {
   const [passwordResetSavingUserId, setPasswordResetSavingUserId] = useState("");
   const [passwordResetErr, setPasswordResetErr] = useState("");
   const [passwordResetInfo, setPasswordResetInfo] = useState("");
+  const [deleteUserSavingId, setDeleteUserSavingId] = useState("");
+  const [deleteUserErr, setDeleteUserErr] = useState("");
+  const [deleteUserInfo, setDeleteUserInfo] = useState("");
   const [depositRequests, setDepositRequests] = useState<DepositRequestRow[]>([]);
   const [depositRequestsLoading, setDepositRequestsLoading] = useState(false);
   const [depositRequestsErr, setDepositRequestsErr] = useState("");
@@ -694,6 +703,7 @@ export default function AdminPage() {
   const closeDetail = () => {
     setDetailOpen(false);
     setDetailErr("");
+    setDeleteUserErr("");
     setDetailLoading(false);
     setDetailUser(null);
     setDetailActivities([]);
@@ -704,6 +714,7 @@ export default function AdminPage() {
     setDetailOpen(true);
     setDetailLoading(true);
     setDetailErr("");
+    setDeleteUserErr("");
     setDetailActivityFilter("ALL");
     setDetailUser({
       id: u.id,
@@ -848,6 +859,54 @@ export default function AdminPage() {
     }
   };
 
+  const deleteCustomerAccount = async () => {
+    const target = detailUser;
+    if (!target?.id) return;
+
+    const label = target.username ?? target.email ?? "this customer";
+    const confirmed = window.confirm(`Delete ${label} account? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeleteUserSavingId(target.id);
+    setDeleteUserErr("");
+    setDeleteUserInfo("");
+
+    try {
+      const r = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: target.id }),
+      });
+
+      const j = await readJson<DeleteUserResponse>(r);
+      if (!r.ok || !j?.ok) {
+        throw new Error(j?.error || "Failed to delete customer account");
+      }
+
+      setUsers((prev) => prev.filter((row) => row.id !== target.id));
+      setPermissionUsers((prev) => prev.filter((row) => row.id !== target.id));
+      setDepositRequests((prev) => {
+        const next = prev.filter((row) => row.userId !== target.id);
+        setPendingDepositCount(next.length);
+        return next;
+      });
+
+      if (selectedUser?.id === target.id) {
+        closeTopup();
+      }
+
+      closeDetail();
+      setDeleteUserInfo(`${label} account deleted.`);
+      void reloadUsers();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to delete customer account";
+      setDeleteUserErr(message);
+    } finally {
+      setDeleteUserSavingId("");
+    }
+  };
+
   const confirmTopup = async () => {
     if (!selectedUser) return;
 
@@ -983,6 +1042,8 @@ export default function AdminPage() {
         {restrictionInfo ? <div className="mb-3 text-sm text-emerald-300">{restrictionInfo}</div> : null}
         {passwordResetErr ? <div className="mb-3 text-sm text-red-300">{passwordResetErr}</div> : null}
         {passwordResetInfo ? <div className="mb-3 text-sm text-emerald-300">{passwordResetInfo}</div> : null}
+        {deleteUserErr ? <div className="mb-3 text-sm text-red-300">{deleteUserErr}</div> : null}
+        {deleteUserInfo ? <div className="mb-3 text-sm text-emerald-300">{deleteUserInfo}</div> : null}
 
         {!loadingUsers && !usersErr && (
           <div className="overflow-x-auto">
@@ -1002,6 +1063,7 @@ export default function AdminPage() {
                   const restricted = isUserRestricted(u);
                   const isSaving = restrictionSavingUserId === u.id;
                   const isResetting = passwordResetSavingUserId === u.id;
+                  const isDeleting = deleteUserSavingId === u.id;
 
                   return (
                     <tr key={u.id} className="border-t border-white/10">
@@ -1026,7 +1088,7 @@ export default function AdminPage() {
                           <button
                             type="button"
                             onClick={() => void openDetail(u)}
-                            disabled={isSaving || isResetting}
+                            disabled={isSaving || isResetting || isDeleting}
                             className="rounded-full border border-white/20 bg-white/5 px-3 py-2 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-60 hover:bg-white/10"
                           >
                             Details
@@ -1034,7 +1096,7 @@ export default function AdminPage() {
                           <button
                             type="button"
                             onClick={() => void resetUserPassword(u)}
-                            disabled={isResetting || isSaving}
+                            disabled={isResetting || isSaving || isDeleting}
                             className="rounded-full bg-blue-600 px-3 py-2 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-60 hover:bg-blue-500"
                           >
                             {isResetting ? "Resetting..." : "Reset Password"}
@@ -1042,7 +1104,7 @@ export default function AdminPage() {
                           <button
                             type="button"
                             onClick={() => void toggleUserRestriction(u)}
-                            disabled={isSaving || isResetting}
+                            disabled={isSaving || isResetting || isDeleting}
                             className={
                               "rounded-full px-3 py-2 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-60 " +
                               (restricted
@@ -1050,7 +1112,7 @@ export default function AdminPage() {
                                 : "bg-rose-600 hover:bg-rose-500")
                             }
                           >
-                            {isSaving ? "Saving..." : restricted ? "Unrestrict" : "Restrict"}
+                            {isDeleting ? "Deleting..." : isSaving ? "Saving..." : restricted ? "Unrestrict" : "Restrict"}
                           </button>
                         </div>
                       </td>
@@ -1075,7 +1137,8 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={closeDetail}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
+                  disabled={deleteUserSavingId === detailUser?.id}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-60"
                 >
                   Close
                 </button>
@@ -1145,6 +1208,26 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-rose-400/25 bg-rose-500/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-rose-200">Danger Zone</div>
+                    <div className="mt-1 text-xs text-rose-100/80">
+                      Permanently delete this customer account and related records.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void deleteCustomerAccount()}
+                    disabled={detailLoading || !detailUser?.id || deleteUserSavingId === detailUser?.id}
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 hover:bg-rose-500"
+                  >
+                    {deleteUserSavingId === detailUser?.id ? "Deleting..." : "Delete Customer"}
+                  </button>
+                </div>
+                {deleteUserErr ? <div className="mt-2 text-xs text-rose-200">{deleteUserErr}</div> : null}
               </div>
 
               <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-3">
