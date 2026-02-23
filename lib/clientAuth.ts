@@ -2,6 +2,8 @@
 
 import { supabase } from "@/lib/supabaseClient";
 
+const AUTH_STORAGE_KEY = "openbookpro.auth.session";
+
 function normalizeClientAuthError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   const lower = message.toLowerCase();
@@ -15,34 +17,113 @@ function normalizeClientAuthError(error: unknown) {
   return error instanceof Error ? error : new Error(message || "Auth error");
 }
 
+function recoverableAuthError(message: string) {
+  const lower = String(message || "").toLowerCase();
+  return (
+    lower.includes("invalid refresh token") ||
+    lower.includes("refresh token not found") ||
+    lower.includes("refresh token is invalid") ||
+    lower.includes("jwt expired") ||
+    lower.includes("auth session missing")
+  );
+}
+
+type StoredSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+};
+
+function clearStoredSession() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // ignore local storage errors
+  }
+}
+
+async function clearBrokenClientSession() {
+  clearStoredSession();
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // ignore sign-out cleanup errors
+  }
+}
+
+function readStoredSession(): StoredSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as
+      | {
+          currentSession?: {
+            access_token?: unknown;
+            refresh_token?: unknown;
+            expires_at?: unknown;
+          } | null;
+          access_token?: unknown;
+          refresh_token?: unknown;
+          expires_at?: unknown;
+        }
+      | null;
+
+    const source = parsed?.currentSession && typeof parsed.currentSession === "object"
+      ? parsed.currentSession
+      : parsed;
+
+    if (!source || typeof source !== "object") return null;
+
+    const accessToken = String(source.access_token || "").trim();
+    const refreshToken = String(source.refresh_token || "").trim();
+    const expiresAt = Number(source.expires_at || 0);
+
+    if (!accessToken) return null;
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
+    };
+  } catch {
+    clearStoredSession();
+    return null;
+  }
+}
+
 export async function getUserAccessToken() {
   try {
-    const readToken = async () => {
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) throw sessionErr;
-      let token = sessionData.session?.access_token || "";
-      if (token) return token;
+    const stored = readStoredSession();
+    if (!stored?.accessToken) return "";
+    if (!stored.refreshToken) {
+      await clearBrokenClientSession();
+      return "";
+    }
 
-      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-      if (!refreshErr) {
-        token = refreshed.session?.access_token || "";
-        if (token) return token;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (stored.expiresAt > nowSec + 15) {
+      return stored.accessToken;
+    }
+
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) {
+      if (recoverableAuthError(sessionErr.message)) {
+        await clearBrokenClientSession();
+        return "";
       }
+      throw sessionErr;
+    }
 
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userData.user) return "";
-
-      const { data: latest } = await supabase.auth.getSession();
-      return latest.session?.access_token || "";
-    };
-
-    const token = await readToken();
-    if (token) return token;
-
-    // Browser restore race: wait a bit and retry once.
-    await new Promise((resolve) => setTimeout(resolve, 180));
-    return await readToken();
+    return sessionData.session?.access_token || "";
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    if (recoverableAuthError(message)) {
+      await clearBrokenClientSession();
+      return "";
+    }
     throw normalizeClientAuthError(error);
   }
 }
@@ -58,6 +139,7 @@ export function isUnauthorizedMessage(message: string) {
   return (
     lower.includes("unauthorized") ||
     lower.includes("jwt") ||
-    lower.includes("auth session missing")
+    lower.includes("auth session missing") ||
+    lower.includes("refresh token")
   );
 }

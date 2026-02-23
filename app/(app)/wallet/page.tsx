@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Asset } from "@/lib/walletStore";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { getUserAuthHeaders } from "@/lib/clientAuth";
+import { getUserAccessToken, getUserAuthHeaders } from "@/lib/clientAuth";
 
 const ASSETS: Asset[] = ["USDT", "BTC", "ETH", "SOL", "XRP"];
 const WALLET_CACHE_KEY_PREFIX = "openbookpro.wallet.cache.v1";
@@ -166,7 +166,9 @@ export default function WalletPage() {
     let cancelled = false;
     const run = async () => {
       try {
-        const { data } = await supabase.auth.getUser();
+        const token = await getUserAccessToken();
+        if (!token || cancelled) return;
+        const { data } = await supabase.auth.getUser(token);
         if (cancelled) return;
         const uid = String(data.user?.id || "");
         if (uid) setCurrentUserId(uid);
@@ -194,7 +196,12 @@ export default function WalletPage() {
   }, [walletCacheKey]);
 
   const refreshWalletFromClient = useCallback(async () => {
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const token = await getUserAccessToken();
+    if (!token) {
+      throw new Error("Unauthorized");
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !authData?.user?.id) {
       throw new Error("Unauthorized");
     }

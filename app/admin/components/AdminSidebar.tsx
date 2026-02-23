@@ -46,6 +46,7 @@ export default function AdminSidebar() {
   };
   const goManageAdmin = () => router.push("/admin/manage-admin");
   const goManageUser = () => router.push("/admin/manage-user");
+  const goSuperAdminProfile = () => router.push("/admin/superadmin-profile");
 
   const onChangeManagedBy = (value: string) => {
     const params = new URLSearchParams(sp.toString());
@@ -250,6 +251,11 @@ export default function AdminSidebar() {
       )}
 
       <div className="mt-2 border-t border-white/10 pt-3">
+        {item(
+          "Super Admin Profile",
+          pathname === "/admin/superadmin-profile",
+          goSuperAdminProfile
+        )}
         {item("Manage Subadmin", pathname === "/admin/manage-admin", goManageAdmin)}
         {item("Manage User", pathname === "/admin/manage-user", goManageUser)}
       </div>

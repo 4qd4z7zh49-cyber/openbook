@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getUserAuthHeaders } from "@/lib/clientAuth";
+import { getUserAccessToken, getUserAuthHeaders } from "@/lib/clientAuth";
 import {
   isOneSignalConfigured,
   oneSignalGetPushState,
@@ -218,7 +218,11 @@ export default function SettingsPage() {
       setPhone(String(json.profile.phone || ""));
       setCountry(String(json.profile.country || ""));
 
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      const token = await getUserAccessToken();
+      if (!token) {
+        throw new Error("Unauthorized");
+      }
+      const { data: userData, error: userErr } = await supabase.auth.getUser(token);
       if (userErr || !userData.user) {
         throw new Error(userErr?.message || "Unauthorized");
       }
@@ -261,7 +265,11 @@ export default function SettingsPage() {
   }, [load]);
 
   const persistMetadata = useCallback(async (nextSettings: AppSettings) => {
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    const token = await getUserAccessToken();
+    if (!token) {
+      throw new Error("Unauthorized");
+    }
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !userData.user) {
       throw new Error(userErr?.message || "Unauthorized");
     }

@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getUserAuthHeaders, isUnauthorizedMessage } from "@/lib/clientAuth";
+import {
+  getUserAccessToken,
+  getUserAuthHeaders,
+  isUnauthorizedMessage,
+} from "@/lib/clientAuth";
 import { supabase } from "@/lib/supabaseClient";
 
 type Side = "BUY" | "SELL";
@@ -587,7 +591,9 @@ export default function TradePanel() {
     let cancelled = false;
     const run = async () => {
       try {
-        const { data } = await supabase.auth.getUser();
+        const token = await getUserAccessToken();
+        if (!token || cancelled) return;
+        const { data } = await supabase.auth.getUser(token);
         const uid = String(data.user?.id || "");
         if (!cancelled && uid) setCurrentUserId(uid);
       } catch {

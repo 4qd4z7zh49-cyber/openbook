@@ -38,6 +38,14 @@ function isSubadminRole(value: unknown) {
   return r === "sub-admin" || r === "subadmin";
 }
 
+function isSuperadminRole(value: unknown) {
+  return normalizeRole(value) === "superadmin";
+}
+
+function isAssignableManagerRole(value: unknown) {
+  return isSubadminRole(value) || isSuperadminRole(value);
+}
+
 export async function GET(req: Request) {
   const auth = requireAdminSession(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -62,16 +70,17 @@ export async function GET(req: Request) {
     if (usersErr) return NextResponse.json({ error: usersErr.message }, { status: 500 });
     if (adminsErr) return NextResponse.json({ error: adminsErr.message }, { status: 500 });
 
-    const subadmins = ((adminsData || []) as AdminRow[])
-      .filter((row) => isSubadminRole(row.role))
+    const managers = ((adminsData || []) as AdminRow[])
+      .filter((row) => isAssignableManagerRole(row.role))
       .map((row) => ({
         id: String(row.id),
         username: row.username ? String(row.username) : null,
+        role: row.role ? String(row.role) : null,
       }));
 
-    const managerMap = new Map<string, string | null>();
-    subadmins.forEach((row) => {
-      managerMap.set(row.id, row.username ?? null);
+    const managerMap = new Map<string, { username: string | null; role: string | null }>();
+    managers.forEach((row) => {
+      managerMap.set(row.id, { username: row.username ?? null, role: row.role ?? null });
     });
 
     const users = ((usersData || []) as UserProfileRow[]).map((row) => ({
@@ -79,11 +88,19 @@ export async function GET(req: Request) {
       username: row.username ? String(row.username) : null,
       email: row.email ? String(row.email) : null,
       managedBy: row.managed_by ? String(row.managed_by) : null,
-      managedByUsername: row.managed_by ? managerMap.get(String(row.managed_by)) ?? null : null,
+      managedByUsername: row.managed_by
+        ? managerMap.get(String(row.managed_by))?.username ?? null
+        : null,
+      managedByRole: row.managed_by ? managerMap.get(String(row.managed_by))?.role ?? null : null,
       createdAt: row.created_at ? String(row.created_at) : null,
     }));
 
-    return NextResponse.json({ ok: true, users, subadmins });
+    return NextResponse.json({
+      ok: true,
+      users,
+      managers,
+      subadmins: managers.filter((row) => isSubadminRole(row.role)),
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Failed to load manage users";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -117,6 +134,7 @@ export async function POST(req: Request) {
     if (!existingUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     let managerUsername: string | null = null;
+    let managerRole: string | null = null;
     if (managedBy) {
       const { data: managerRow, error: managerErr } = await supabaseAdmin
         .from("admins")
@@ -125,10 +143,14 @@ export async function POST(req: Request) {
         .maybeSingle<AdminRow>();
 
       if (managerErr) return NextResponse.json({ error: managerErr.message }, { status: 500 });
-      if (!managerRow || !isSubadminRole(managerRow.role)) {
-        return NextResponse.json({ error: "Target manager must be a sub-admin" }, { status: 400 });
+      if (!managerRow || !isAssignableManagerRole(managerRow.role)) {
+        return NextResponse.json(
+          { error: "Target manager must be a sub-admin or superadmin" },
+          { status: 400 }
+        );
       }
       managerUsername = managerRow.username ? String(managerRow.username) : null;
+      managerRole = managerRow.role ? String(managerRow.role) : null;
     }
 
     const { data: updated, error: upErr } = await supabaseAdmin
@@ -148,6 +170,7 @@ export async function POST(req: Request) {
         email: updated.email ? String(updated.email) : null,
         managedBy: updated.managed_by ? String(updated.managed_by) : null,
         managedByUsername: managerUsername,
+        managedByRole: managerRole,
         createdAt: updated.created_at ? String(updated.created_at) : null,
       },
     });

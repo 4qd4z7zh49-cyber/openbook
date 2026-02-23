@@ -8,19 +8,22 @@ type UserRow = {
   email?: string | null;
   managedBy?: string | null;
   managedByUsername?: string | null;
+  managedByRole?: string | null;
   createdAt?: string | null;
 };
 
-type SubadminRow = {
+type ManagerRow = {
   id: string;
   username?: string | null;
+  role?: string | null;
 };
 
 type ManageUsersResponse = {
   ok?: boolean;
   error?: string;
   users?: UserRow[];
-  subadmins?: SubadminRow[];
+  managers?: ManagerRow[];
+  subadmins?: ManagerRow[];
 };
 
 type ManageUsersUpdateResponse = {
@@ -36,10 +39,23 @@ function fmtDate(value?: string | null) {
   return d.toISOString().slice(0, 10);
 }
 
+function normalizeRole(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function roleLabel(role?: string | null) {
+  const normalized = normalizeRole(role);
+  if (normalized === "superadmin") return "Superadmin";
+  if (normalized === "sub-admin" || normalized === "subadmin") return "Sub-admin";
+  return "Manager";
+}
+
 function managerLabel(user: UserRow) {
   if (!user.managedBy) return "Unassigned";
   const name = String(user.managedByUsername || "").trim();
-  if (name) return name;
+  if (name) return `${name} (${roleLabel(user.managedByRole)})`;
   return `${user.managedBy.slice(0, 8)}...`;
 }
 
@@ -47,9 +63,13 @@ function managerValue(user: UserRow) {
   return user.managedBy || "UNASSIGNED";
 }
 
+function managerOptionLabel(manager: ManagerRow) {
+  return `${manager.username || manager.id.slice(0, 8)} (${roleLabel(manager.role)})`;
+}
+
 export default function ManageUserPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [subadmins, setSubadmins] = useState<SubadminRow[]>([]);
+  const [managers, setManagers] = useState<ManagerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingUserId, setSavingUserId] = useState("");
   const [search, setSearch] = useState("");
@@ -69,10 +89,14 @@ export default function ManageUserPage() {
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Failed to load manage users");
 
       const nextUsers = Array.isArray(j.users) ? j.users : [];
-      const nextSubadmins = Array.isArray(j.subadmins) ? j.subadmins : [];
+      const nextManagers = Array.isArray(j.managers)
+        ? j.managers
+        : Array.isArray(j.subadmins)
+          ? j.subadmins
+          : [];
 
       setUsers(nextUsers);
-      setSubadmins(nextSubadmins);
+      setManagers(nextManagers);
 
       const nextDraft: Record<string, string> = {};
       nextUsers.forEach((row) => {
@@ -141,7 +165,11 @@ export default function ManageUserPage() {
       }));
 
       const who = user.username || user.email || "User";
-      const target = j.user?.managedByUsername || (j.user?.managedBy ? "Sub-admin" : "Unassigned");
+      const target = j.user?.managedByUsername
+        ? `${j.user.managedByUsername} (${roleLabel(j.user.managedByRole)})`
+        : j.user?.managedBy
+          ? roleLabel(j.user.managedByRole)
+          : "Unassigned";
       setInfo(`${who} moved to ${target}.`);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to update manager";
@@ -156,7 +184,7 @@ export default function ManageUserPage() {
       <div>
         <div className="text-2xl font-semibold">Manage User</div>
         <p className="mt-2 text-white/60">
-          Move customer assignment between unassigned and sub-admin managers.
+          Move customer assignment between unassigned, sub-admin, and superadmin managers.
         </p>
       </div>
 
@@ -217,9 +245,9 @@ export default function ManageUserPage() {
                           <option value="UNASSIGNED" className="bg-black">
                             Unassigned
                           </option>
-                          {subadmins.map((m) => (
+                          {managers.map((m) => (
                             <option key={m.id} value={m.id} className="bg-black">
-                              {m.username || m.id.slice(0, 8)}
+                              {managerOptionLabel(m)}
                             </option>
                           ))}
                         </select>

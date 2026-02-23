@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Script from "next/script";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserAccessToken } from "@/lib/clientAuth";
 import {
   ensureOneSignalInitialized,
   isOneSignalConfigured,
@@ -21,7 +22,13 @@ export default function OneSignalBootstrap() {
     const syncCurrentUser = async () => {
       try {
         await ensureOneSignalInitialized();
-        const { data, error } = await supabase.auth.getUser();
+        const token = await getUserAccessToken();
+        if (!token || cancelled) {
+          await oneSignalLogout();
+          return;
+        }
+
+        const { data, error } = await supabase.auth.getUser(token);
         if (cancelled || error) return;
 
         const uid = String(data.user?.id || "").trim();
@@ -59,4 +66,3 @@ export default function OneSignalBootstrap() {
     />
   );
 }
-

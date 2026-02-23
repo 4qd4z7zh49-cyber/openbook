@@ -1,7 +1,7 @@
 "use client";
 
 import { MINING_PLANS, type MiningPlan } from "@/lib/miningMock";
-import { supabase } from "@/lib/supabaseClient";
+import { getUserAuthHeaders } from "@/lib/clientAuth";
 
 export type MiningOrderStatus = "PENDING" | "ACTIVE" | "REJECTED" | "ABORTED" | "COMPLETED";
 
@@ -82,10 +82,7 @@ function mapOrder(row: DbMiningOrder): MiningOrder {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  return getUserAuthHeaders();
 }
 
 export async function getMiningOrders() {

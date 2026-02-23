@@ -11,12 +11,6 @@ type Row = {
   created_at?: string | null;
 };
 
-type ChangePasswordResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-};
-
 type SubadminResetPasswordResponse = {
   ok?: boolean;
   error?: string;
@@ -32,12 +26,6 @@ export default function ManageAdminPage() {
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
   const [newInvite, setNewInvite] = useState<string | null>(null);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [changePasswordErr, setChangePasswordErr] = useState("");
-  const [changePasswordInfo, setChangePasswordInfo] = useState("");
   const [resettingSubadminId, setResettingSubadminId] = useState("");
   const [subadminResetErr, setSubadminResetErr] = useState("");
   const [subadminResetInfo, setSubadminResetInfo] = useState("");
@@ -84,44 +72,6 @@ export default function ManageAdminPage() {
       setErr(message);
     } finally {
       setCreating(false);
-    }
-  }
-
-  async function changeMyPassword() {
-    setChangingPassword(true);
-    setChangePasswordErr("");
-    setChangePasswordInfo("");
-    try {
-      if (newPassword.length < 8) {
-        throw new Error("New password must be at least 8 characters");
-      }
-      if (newPassword !== confirmNewPassword) {
-        throw new Error("New password and confirm password do not match");
-      }
-
-      const r = await fetch("/api/admin/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-        }),
-      });
-
-      const j = (await r.json().catch(() => ({}))) as ChangePasswordResponse;
-      if (!r.ok || !j?.ok) {
-        throw new Error(j?.error || "Failed to change password");
-      }
-
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmNewPassword("");
-      setChangePasswordInfo("Password updated successfully.");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to change password";
-      setChangePasswordErr(message);
-    } finally {
-      setChangingPassword(false);
     }
   }
 
@@ -241,56 +191,6 @@ export default function ManageAdminPage() {
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <div className="text-lg font-semibold">Change My Password</div>
-        <p className="mt-2 text-sm text-white/60">
-          Use your current password, then set a new one. For `superadmin`, this replaces
-          `YOUR_ADMIN_PASSWORD!`.
-        </p>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <input
-            className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-            placeholder="Current password"
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-          />
-          <input
-            className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-            placeholder="New password (min 8)"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-          <input
-            className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-            placeholder="Confirm new password"
-            type="password"
-            value={confirmNewPassword}
-            onChange={(e) => setConfirmNewPassword(e.target.value)}
-          />
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            onClick={changeMyPassword}
-            disabled={
-              changingPassword ||
-              !currentPassword ||
-              newPassword.length < 8 ||
-              confirmNewPassword.length < 8
-            }
-            className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold disabled:opacity-60"
-          >
-            {changingPassword ? "Updating..." : "Update Password"}
-          </button>
-        </div>
-
-        {changePasswordErr ? <div className="mt-3 text-red-400">{changePasswordErr}</div> : null}
-        {changePasswordInfo ? <div className="mt-3 text-emerald-300">{changePasswordInfo}</div> : null}
-      </div>
-
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
         <div className="mb-3 text-lg font-semibold">Sub-admin list</div>
 
         {loading ? <div className="text-white/60">Loading...</div> : null}
@@ -304,7 +204,7 @@ export default function ManageAdminPage() {
                   <th className="py-3">USERNAME</th>
                   <th className="py-3">INVITE</th>
                   <th className="py-3">MANAGED BY</th>
-                  <th className="py-3 text-center">CHANGE PASSWORD</th>
+                  <th className="py-3 text-center">RESET PASSWORD</th>
                   <th className="py-3 text-right">CREATED</th>
                 </tr>
               </thead>
@@ -325,7 +225,7 @@ export default function ManageAdminPage() {
                           onClick={() => void resetSubadminPassword(r)}
                           className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-60"
                         >
-                          {busy ? "Resetting..." : "Change Password"}
+                          {busy ? "Resetting..." : "Reset Password"}
                         </button>
                       </td>
                       <td className="py-3 text-right text-white/70">
