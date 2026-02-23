@@ -49,6 +49,7 @@ type AddressMap = Record<Asset, string>;
 type DepositAddressResponse = {
   ok?: boolean;
   error?: string;
+  canEdit?: boolean;
   addresses?: Partial<Record<Asset, string>>;
 };
 
@@ -280,6 +281,7 @@ export default function AdminPage() {
   const [topupInfo, setTopupInfo] = useState("");
   const [topupLoading, setTopupLoading] = useState(false);
   const [depositAddresses, setDepositAddresses] = useState<AddressMap>(emptyAddressMap());
+  const [canEditDepositAddresses, setCanEditDepositAddresses] = useState(false);
   const [depositAddressLoading, setDepositAddressLoading] = useState(false);
   const [depositAddressSaving, setDepositAddressSaving] = useState(false);
   const [depositAddressErr, setDepositAddressErr] = useState("");
@@ -354,20 +356,24 @@ export default function AdminPage() {
     }
 
     return {
-      USDT: String(j.addresses?.USDT || ""),
-      BTC: String(j.addresses?.BTC || ""),
-      ETH: String(j.addresses?.ETH || ""),
-      SOL: String(j.addresses?.SOL || ""),
-      XRP: String(j.addresses?.XRP || ""),
-    } as AddressMap;
+      canEdit: Boolean(j.canEdit),
+      addresses: {
+        USDT: String(j.addresses?.USDT || ""),
+        BTC: String(j.addresses?.BTC || ""),
+        ETH: String(j.addresses?.ETH || ""),
+        SOL: String(j.addresses?.SOL || ""),
+        XRP: String(j.addresses?.XRP || ""),
+      } as AddressMap,
+    };
   }, []);
 
   async function reloadDepositAddresses() {
     setDepositAddressLoading(true);
     setDepositAddressErr("");
     try {
-      const rows = await fetchDepositAddresses();
-      setDepositAddresses(rows);
+      const result = await fetchDepositAddresses();
+      setCanEditDepositAddresses(result.canEdit);
+      setDepositAddresses(result.addresses);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load deposit addresses";
       setDepositAddressErr(message);
@@ -377,6 +383,12 @@ export default function AdminPage() {
   }
 
   async function saveDepositAddresses() {
+    if (!canEditDepositAddresses) {
+      setDepositAddressErr("Only primary superadmin can update deposit addresses");
+      setDepositAddressInfo("");
+      return;
+    }
+
     setDepositAddressSaving(true);
     setDepositAddressErr("");
     setDepositAddressInfo("");
@@ -391,6 +403,7 @@ export default function AdminPage() {
         throw new Error(j?.error || "Failed to save deposit addresses");
       }
 
+      setCanEditDepositAddresses(Boolean(j.canEdit));
       setDepositAddresses({
         USDT: String(j.addresses?.USDT || ""),
         BTC: String(j.addresses?.BTC || ""),
@@ -603,12 +616,13 @@ export default function AdminPage() {
       setDepositAddressErr("");
       setDepositRequestsErr("");
       try {
-        const [rows, depositResult] = await Promise.all([
+        const [addressResult, depositResult] = await Promise.all([
           fetchDepositAddresses(),
           fetchDepositRequests(),
         ]);
         if (!cancelled) {
-          setDepositAddresses(rows);
+          setCanEditDepositAddresses(addressResult.canEdit);
+          setDepositAddresses(addressResult.addresses);
           setDepositRequests(depositResult.requests);
           setPendingDepositCount(depositResult.pendingCount);
         }
@@ -1325,7 +1339,7 @@ export default function AdminPage() {
         <div className="mb-6 rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="text-base font-semibold">Deposit Wallet Addresses (ON-CHAIN)</div>
           <div className="mt-1 text-sm text-white/60">
-            Users will see these addresses on Deposit page.
+            These superadmin addresses are shown to all users on Deposit page.
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1334,6 +1348,8 @@ export default function AdminPage() {
                 <div className="mb-1 text-xs text-white/60">{a === "SOL" ? "Solana (SOL)" : a}</div>
                 <input
                   value={depositAddresses[a] || ""}
+                  readOnly={!canEditDepositAddresses}
+                  disabled={!canEditDepositAddresses}
                   onChange={(e) =>
                     setDepositAddresses((prev) => ({
                       ...prev,
@@ -1341,19 +1357,22 @@ export default function AdminPage() {
                     }))
                   }
                   placeholder={`${a} wallet address`}
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </label>
             ))}
           </div>
 
+          {!canEditDepositAddresses ? (
+            <div className="mt-3 text-xs text-amber-200">Read only: only primary superadmin can edit addresses.</div>
+          ) : null}
           {depositAddressErr ? <div className="mt-3 text-sm text-red-300">{depositAddressErr}</div> : null}
           {depositAddressInfo ? <div className="mt-3 text-sm text-emerald-300">{depositAddressInfo}</div> : null}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={depositAddressSaving}
+              disabled={depositAddressSaving || !canEditDepositAddresses}
               onClick={() => void saveDepositAddresses()}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >

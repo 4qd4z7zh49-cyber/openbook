@@ -17,6 +17,11 @@ type TopupBody = {
   action?: string;
 };
 
+function isSubadminRole(role: string) {
+  const normalized = role.trim().toLowerCase();
+  return normalized === "sub-admin" || normalized === "subadmin";
+}
+
 function normalizeAsset(value: unknown): Asset {
   const s = String(value ?? "").trim().toUpperCase();
   return (ASSETS as readonly string[]).includes(s) ? (s as Asset) : "USDT";
@@ -38,6 +43,9 @@ export async function POST(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { adminId, role } = auth;
+  if (isSubadminRole(role)) {
+    return NextResponse.json({ error: "Sub-admin cannot topup or deduct balances" }, { status: 403 });
+  }
 
   try {
     const body = normalizeBody(await req.json().catch(() => null));

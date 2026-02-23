@@ -8,13 +8,6 @@ type Row = {
   role: string | null;
   invitation_code: string | null;
   managed_by: string | null;
-  deposit_addresses?: {
-    USDT?: string;
-    BTC?: string;
-    ETH?: string;
-    SOL?: string;
-    XRP?: string;
-  };
   created_at?: string | null;
 };
 
@@ -24,18 +17,16 @@ type ChangePasswordResponse = {
   message?: string;
 };
 
-function shortAddress(v?: string) {
-  const s = String(v || "").trim();
-  if (!s) return "-";
-  if (s.length <= 22) return s;
-  return `${s.slice(0, 10)}...${s.slice(-8)}`;
-}
+type SubadminResetPasswordResponse = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+};
 
 export default function ManageAdminPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [copiedKey, setCopiedKey] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -47,6 +38,9 @@ export default function ManageAdminPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [changePasswordErr, setChangePasswordErr] = useState("");
   const [changePasswordInfo, setChangePasswordInfo] = useState("");
+  const [resettingSubadminId, setResettingSubadminId] = useState("");
+  const [subadminResetErr, setSubadminResetErr] = useState("");
+  const [subadminResetInfo, setSubadminResetInfo] = useState("");
 
   async function load() {
     setLoading(true);
@@ -93,20 +87,6 @@ export default function ManageAdminPage() {
     }
   }
 
-  async function copyAddress(value: string, key: string) {
-    const v = String(value || "").trim();
-    if (!v || v === "-") return;
-    try {
-      await navigator.clipboard.writeText(v);
-      setCopiedKey(key);
-      window.setTimeout(() => {
-        setCopiedKey((prev) => (prev === key ? "" : prev));
-      }, 1200);
-    } catch {
-      setErr("Copy failed");
-    }
-  }
-
   async function changeMyPassword() {
     setChangingPassword(true);
     setChangePasswordErr("");
@@ -145,10 +125,72 @@ export default function ManageAdminPage() {
     }
   }
 
+  async function resetSubadminPassword(row: Row) {
+    const name = String(row.username || "sub-admin");
+    const input = window.prompt(`Set new password for ${name} (minimum 8 characters).`, "");
+    if (input === null) return;
+
+    const newPassword = String(input);
+    if (newPassword.length < 8) {
+      setSubadminResetErr("New password must be at least 8 characters.");
+      setSubadminResetInfo("");
+      return;
+    }
+    if (newPassword.length > 72) {
+      setSubadminResetErr("New password must be at most 72 characters.");
+      setSubadminResetInfo("");
+      return;
+    }
+
+    const confirmPassword = window.prompt(`Confirm new password for ${name}.`, "");
+    if (confirmPassword === null) return;
+    if (confirmPassword !== newPassword) {
+      setSubadminResetErr("Confirm password does not match.");
+      setSubadminResetInfo("");
+      return;
+    }
+
+    setResettingSubadminId(row.id);
+    setSubadminResetErr("");
+    setSubadminResetInfo("");
+
+    try {
+      const res = await fetch("/api/admin/subadmins/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subadminId: row.id,
+          newPassword,
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as SubadminResetPasswordResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Failed to reset sub-admin password");
+      }
+
+      setSubadminResetInfo(`Password reset completed for ${name}.`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to reset sub-admin password";
+      setSubadminResetErr(message);
+    } finally {
+      setResettingSubadminId("");
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-2xl font-semibold">Manage Admin</div>
+        <div
+          className="text-2xl font-semibold"
+          style={{
+            color: "#ecfeff",
+            textShadow:
+              "0 0 6px rgba(34,211,238,0.85), 0 0 14px rgba(59,130,246,0.55), 0 0 24px rgba(217,70,239,0.35)",
+          }}
+        >
+          Manage Subadmin
+        </div>
         <p className="mt-2 text-white/60">Create sub-admin accounts + generate invitation codes.</p>
       </div>
 
@@ -256,107 +298,49 @@ export default function ManageAdminPage() {
 
         {!loading && rows.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1320px]">
+            <table className="w-full min-w-[940px]">
               <thead>
                 <tr className="text-left text-white/60">
                   <th className="py-3">USERNAME</th>
                   <th className="py-3">INVITE</th>
-                  <th className="py-3">USDT ADDRESS</th>
-                  <th className="py-3">BTC ADDRESS</th>
-                  <th className="py-3">ETH ADDRESS</th>
-                  <th className="py-3">SOL ADDRESS</th>
-                  <th className="py-3">XRP ADDRESS</th>
                   <th className="py-3">MANAGED BY</th>
+                  <th className="py-3 text-center">CHANGE PASSWORD</th>
                   <th className="py-3 text-right">CREATED</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-t border-white/10">
-                    <td className="py-3">{r.username ?? "-"}</td>
-                    <td className="py-3 font-mono">{r.invitation_code ?? "-"}</td>
-                    <td className="py-3 font-mono text-xs text-white/70" title={r.deposit_addresses?.USDT || ""}>
-                      <div className="flex items-center gap-2">
-                        <span>{shortAddress(r.deposit_addresses?.USDT)}</span>
-                        {r.deposit_addresses?.USDT ? (
-                          <button
-                            type="button"
-                            onClick={() => copyAddress(r.deposit_addresses?.USDT || "", `${r.id}-USDT`)}
-                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:bg-white/10"
-                          >
-                            {copiedKey === `${r.id}-USDT` ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-white/70" title={r.deposit_addresses?.BTC || ""}>
-                      <div className="flex items-center gap-2">
-                        <span>{shortAddress(r.deposit_addresses?.BTC)}</span>
-                        {r.deposit_addresses?.BTC ? (
-                          <button
-                            type="button"
-                            onClick={() => copyAddress(r.deposit_addresses?.BTC || "", `${r.id}-BTC`)}
-                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:bg-white/10"
-                          >
-                            {copiedKey === `${r.id}-BTC` ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-white/70" title={r.deposit_addresses?.ETH || ""}>
-                      <div className="flex items-center gap-2">
-                        <span>{shortAddress(r.deposit_addresses?.ETH)}</span>
-                        {r.deposit_addresses?.ETH ? (
-                          <button
-                            type="button"
-                            onClick={() => copyAddress(r.deposit_addresses?.ETH || "", `${r.id}-ETH`)}
-                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:bg-white/10"
-                          >
-                            {copiedKey === `${r.id}-ETH` ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-white/70" title={r.deposit_addresses?.SOL || ""}>
-                      <div className="flex items-center gap-2">
-                        <span>{shortAddress(r.deposit_addresses?.SOL)}</span>
-                        {r.deposit_addresses?.SOL ? (
-                          <button
-                            type="button"
-                            onClick={() => copyAddress(r.deposit_addresses?.SOL || "", `${r.id}-SOL`)}
-                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:bg-white/10"
-                          >
-                            {copiedKey === `${r.id}-SOL` ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-white/70" title={r.deposit_addresses?.XRP || ""}>
-                      <div className="flex items-center gap-2">
-                        <span>{shortAddress(r.deposit_addresses?.XRP)}</span>
-                        {r.deposit_addresses?.XRP ? (
-                          <button
-                            type="button"
-                            onClick={() => copyAddress(r.deposit_addresses?.XRP || "", `${r.id}-XRP`)}
-                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:bg-white/10"
-                          >
-                            {copiedKey === `${r.id}-XRP` ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-white/70">
-                      {r.managed_by ? r.managed_by.slice(0, 12) + "…" : "-"}
-                    </td>
-                    <td className="py-3 text-right text-white/70">
-                      {(r.created_at || "").toString().slice(0, 10) || "-"}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const busy = resettingSubadminId === r.id;
+                  return (
+                    <tr key={r.id} className="border-t border-white/10">
+                      <td className="py-3">{r.username ?? "-"}</td>
+                      <td className="py-3 font-mono">{r.invitation_code ?? "-"}</td>
+                      <td className="py-3 font-mono text-white/70">
+                        {r.managed_by ? r.managed_by.slice(0, 12) + "…" : "-"}
+                      </td>
+                      <td className="py-3 text-center">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void resetSubadminPassword(r)}
+                          className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-60"
+                        >
+                          {busy ? "Resetting..." : "Change Password"}
+                        </button>
+                      </td>
+                      <td className="py-3 text-right text-white/70">
+                        {(r.created_at || "").toString().slice(0, 10) || "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : null}
+
+        {subadminResetErr ? <div className="mt-3 text-red-400">{subadminResetErr}</div> : null}
+        {subadminResetInfo ? <div className="mt-3 text-emerald-300">{subadminResetInfo}</div> : null}
       </div>
     </div>
   );

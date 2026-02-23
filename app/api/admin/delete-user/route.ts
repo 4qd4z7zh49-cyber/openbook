@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertCanManageUser, requireAdminSession, supabaseAdmin } from "../_helpers";
+import { assertCanManageUser, isRootAdminRole, requireAdminSession, supabaseAdmin } from "../_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +62,9 @@ export async function POST(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { adminId, role } = auth;
+  if (!isRootAdminRole(role)) {
+    return NextResponse.json({ error: "Sub-admin cannot delete users" }, { status: 403 });
+  }
 
   try {
     const body = parseBody(await req.json().catch(() => null));

@@ -37,6 +37,10 @@ type ActionResp = {
   request?: WithdrawRequest;
 };
 
+type WithdrawRequestsPanelProps = {
+  readOnly?: boolean;
+};
+
 async function readJson<T>(res: Response): Promise<T> {
   try {
     return (await res.json()) as T;
@@ -63,7 +67,7 @@ function statusBadgeClass(status: WithdrawStatus) {
   return "border-amber-300/30 bg-amber-500/10 text-amber-200";
 }
 
-export default function WithdrawRequestsPanel() {
+export default function WithdrawRequestsPanel({ readOnly = false }: WithdrawRequestsPanelProps) {
   const sp = useSearchParams();
   const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [filter, setFilter] = useState<FilterStatus>("ALL");
@@ -110,6 +114,7 @@ export default function WithdrawRequestsPanel() {
   );
 
   const onAction = async (requestId: string, action: Action) => {
+    if (readOnly) return;
     setActionLoadingId(requestId);
     setErr("");
     setInfo("");
@@ -175,6 +180,7 @@ export default function WithdrawRequestsPanel() {
       <div className="mb-3 text-xs text-white/60">
         Pending in current list: {pendingInView}
       </div>
+      {readOnly ? <div className="mb-3 text-xs text-amber-200">Read only mode: status updates are disabled.</div> : null}
 
       {err ? <div className="mb-3 text-sm text-red-300">{err}</div> : null}
       {info ? <div className="mb-3 text-sm text-emerald-300">{info}</div> : null}
@@ -199,7 +205,7 @@ export default function WithdrawRequestsPanel() {
                 <th className="px-3 py-3">ADDRESS</th>
                 <th className="px-3 py-3">STATUS</th>
                 <th className="px-3 py-3">TIME</th>
-                <th className="px-3 py-3 text-right">ACTION</th>
+                <th className="px-3 py-3 text-right">{readOnly ? "VIEW" : "ACTION"}</th>
               </tr>
             </thead>
             <tbody>
@@ -224,24 +230,28 @@ export default function WithdrawRequestsPanel() {
                     </td>
                     <td className="px-3 py-3 text-xs text-white/70">{fmtWhen(row.createdAt)}</td>
                     <td className="px-3 py-3 text-right">
-                      <div className="inline-flex gap-2">
-                        <button
-                          type="button"
-                          disabled={busy || row.status === "CONFIRMED"}
-                          onClick={() => void onAction(row.id, "CONFIRM")}
-                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-                        >
-                          {busy ? "..." : "Confirm"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy || row.status === "FROZEN"}
-                          onClick={() => void onAction(row.id, "FROZEN")}
-                          className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-                        >
-                          {busy ? "..." : "Frozen"}
-                        </button>
-                      </div>
+                      {readOnly ? (
+                        <span className="text-xs text-white/45">Read only</span>
+                      ) : (
+                        <div className="inline-flex gap-2">
+                          <button
+                            type="button"
+                            disabled={busy || row.status === "CONFIRMED"}
+                            onClick={() => void onAction(row.id, "CONFIRM")}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                          >
+                            {busy ? "..." : "Confirm"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || row.status === "FROZEN"}
+                            onClick={() => void onAction(row.id, "FROZEN")}
+                            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                          >
+                            {busy ? "..." : "Frozen"}
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

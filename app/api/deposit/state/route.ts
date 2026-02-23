@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   createServiceClient,
   resolveUserId,
-  resolveAddressOwnerAdmin,
+  resolvePrimarySuperadmin,
   readAddressMap,
 } from "../_helpers";
 
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const owner = await resolveAddressOwnerAdmin(svc, userId);
+    const owner = await resolvePrimarySuperadmin(svc);
     const addresses = owner?.id ? await readAddressMap(svc, owner.id) : null;
 
     const { data: historyRows, error: histErr } = await svc

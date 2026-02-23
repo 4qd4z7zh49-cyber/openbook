@@ -9,9 +9,7 @@ import NotifyPanel from "@/app/admin/components/NotifyPanel";
 import SupportChatPanel from "@/app/admin/components/SupportChatPanel";
 
 type Asset = "USDT" | "BTC" | "ETH" | "SOL" | "XRP";
-type TopupMode = "ADD" | "SUBTRACT";
 type TradePermissionMode = "BUY_ALL_WIN" | "SELL_ALL_WIN" | "RANDOM_WIN_LOSS" | "ALL_LOSS";
-const ASSETS: Asset[] = ["USDT", "BTC", "ETH", "SOL", "XRP"];
 
 type UserRow = {
   id: string;
@@ -32,21 +30,6 @@ type UserRow = {
 type UsersResp = {
   users?: UserRow[];
   error?: string;
-};
-
-type TopupResp = {
-  ok?: boolean;
-  error?: string;
-  mode?: TopupMode;
-  newUsdtBalance?: number | null;
-};
-
-type AddressMap = Record<Asset, string>;
-
-type DepositAddressResponse = {
-  ok?: boolean;
-  error?: string;
-  addresses?: Partial<Record<Asset, string>>;
 };
 
 type TradePermissionUser = {
@@ -135,16 +118,6 @@ function fmtManagedBy(user: UserRow) {
   return `${id.slice(0, 10)}...`;
 }
 
-function emptyAddressMap(): AddressMap {
-  return {
-    USDT: "",
-    BTC: "",
-    ETH: "",
-    SOL: "",
-    XRP: "",
-  };
-}
-
 const PERMISSION_MODE_OPTIONS: Array<{ value: TradePermissionMode; label: string }> = [
   { value: "BUY_ALL_WIN", label: "Buy all win" },
   { value: "SELL_ALL_WIN", label: "Sell all win" },
@@ -182,20 +155,6 @@ export default function SubAdminPage() {
   const [err, setErr] = useState("");
   const [users, setUsers] = useState<UserRow[]>([]);
 
-  const [topupOpen, setTopupOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
-  const [amount, setAmount] = useState("");
-  const [asset, setAsset] = useState<Asset>("USDT");
-  const [topupMode, setTopupMode] = useState<TopupMode>("ADD");
-  const [note, setNote] = useState("");
-  const [topupLoading, setTopupLoading] = useState(false);
-  const [topupErr, setTopupErr] = useState("");
-  const [topupInfo, setTopupInfo] = useState("");
-  const [depositAddresses, setDepositAddresses] = useState<AddressMap>(emptyAddressMap());
-  const [depositAddressLoading, setDepositAddressLoading] = useState(false);
-  const [depositAddressSaving, setDepositAddressSaving] = useState(false);
-  const [depositAddressErr, setDepositAddressErr] = useState("");
-  const [depositAddressInfo, setDepositAddressInfo] = useState("");
   const [permissionUsers, setPermissionUsers] = useState<TradePermissionUser[]>([]);
   const [permissionLoading, setPermissionLoading] = useState(false);
   const [permissionErr, setPermissionErr] = useState("");
@@ -225,70 +184,6 @@ export default function SubAdminPage() {
       setErr(message);
     } finally {
       setLoading(false);
-    }
-  }
-
-  const fetchDepositAddresses = useCallback(async () => {
-    const r = await fetch("/api/admin/deposit-addresses", {
-      method: "GET",
-      cache: "no-store",
-    });
-    const j = await readJson<DepositAddressResponse>(r);
-    if (!r.ok || !j?.ok) {
-      throw new Error(j?.error || "Failed to load deposit addresses");
-    }
-
-    return {
-      USDT: String(j.addresses?.USDT || ""),
-      BTC: String(j.addresses?.BTC || ""),
-      ETH: String(j.addresses?.ETH || ""),
-      SOL: String(j.addresses?.SOL || ""),
-      XRP: String(j.addresses?.XRP || ""),
-    } as AddressMap;
-  }, []);
-
-  const reloadDepositAddresses = useCallback(async () => {
-    setDepositAddressLoading(true);
-    setDepositAddressErr("");
-    try {
-      const rows = await fetchDepositAddresses();
-      setDepositAddresses(rows);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to load deposit addresses";
-      setDepositAddressErr(message);
-    } finally {
-      setDepositAddressLoading(false);
-    }
-  }, [fetchDepositAddresses]);
-
-  async function saveDepositAddresses() {
-    setDepositAddressSaving(true);
-    setDepositAddressErr("");
-    setDepositAddressInfo("");
-    try {
-      const r = await fetch("/api/admin/deposit-addresses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: depositAddresses }),
-      });
-      const j = await readJson<DepositAddressResponse>(r);
-      if (!r.ok || !j?.ok) {
-        throw new Error(j?.error || "Failed to save deposit addresses");
-      }
-
-      setDepositAddresses({
-        USDT: String(j.addresses?.USDT || ""),
-        BTC: String(j.addresses?.BTC || ""),
-        ETH: String(j.addresses?.ETH || ""),
-        SOL: String(j.addresses?.SOL || ""),
-        XRP: String(j.addresses?.XRP || ""),
-      });
-      setDepositAddressInfo("Deposit wallet addresses saved");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to save deposit addresses";
-      setDepositAddressErr(message);
-    } finally {
-      setDepositAddressSaving(false);
     }
   }
 
@@ -424,37 +319,14 @@ export default function SubAdminPage() {
     if (tab !== "topups" && tab !== "overview") return;
     void reloadUsers();
     if (tab === "topups") {
-      void reloadDepositAddresses();
       void reloadDepositRequests();
     }
-  }, [tab, reloadDepositAddresses, reloadDepositRequests]);
+  }, [tab, reloadDepositRequests]);
 
   useEffect(() => {
     if (tab !== "orders") return;
     void reloadPermissionUsers();
   }, [tab, reloadPermissionUsers]);
-
-  const openTopup = (u: UserRow) => {
-    setSelectedUser(u);
-    setAmount("");
-    setAsset("USDT");
-    setTopupMode("ADD");
-    setNote("");
-    setTopupErr("");
-    setTopupInfo("");
-    setDepositRequestsErr("");
-    setDepositRequestsInfo("");
-    setTopupOpen(true);
-  };
-
-  const closeTopup = () => {
-    setTopupOpen(false);
-    setSelectedUser(null);
-    setAmount("");
-    setTopupMode("ADD");
-    setNote("");
-    setTopupErr("");
-  };
 
   const pendingByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -496,70 +368,6 @@ export default function SubAdminPage() {
       setDepositRequestUserFilter("ALL");
     }
   }, [depositRequestUserFilter, depositRequests]);
-
-  const confirmTopup = async () => {
-    if (!selectedUser) return;
-
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) {
-      setTopupErr("Amount must be greater than 0");
-      return;
-    }
-
-    setTopupLoading(true);
-    setTopupErr("");
-    setTopupInfo("");
-
-    try {
-      const r = await fetch("/api/admin/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          amount: n,
-          asset,
-          mode: topupMode,
-          note: note || null,
-        }),
-      });
-
-      const j = await readJson<TopupResp>(r);
-      if (!r.ok || !j?.ok) {
-        throw new Error(j?.error || "Topup failed");
-      }
-
-      if (asset === "USDT" && typeof j.newUsdtBalance === "number") {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === selectedUser.id
-              ? {
-                  ...u,
-                  balance: Number(j.newUsdtBalance),
-                  usdt: Number(j.newUsdtBalance),
-                }
-              : u
-          )
-        );
-      }
-
-      setTopupInfo(
-        topupMode === "SUBTRACT"
-          ? asset === "USDT"
-            ? "Deduct success (USDT updated)"
-            : `Deduct success (${asset})`
-          : asset === "USDT"
-            ? "Topup success (USDT updated)"
-            : `Topup success (${asset})`
-      );
-      closeTopup();
-      await reloadUsers();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Topup failed";
-      setTopupErr(message);
-    } finally {
-      setTopupLoading(false);
-    }
-  };
 
   const resetUserPassword = async (u: UserRow) => {
     const input = window.prompt(
@@ -621,7 +429,7 @@ export default function SubAdminPage() {
                   : tab === "orders"
                     ? "Trade Permission"
                     : tab === "withdraw"
-                      ? "Withdraw"
+                      ? "Withdraw Info"
                       : tab === "notify"
                         ? "Notify"
                         : "Support"}
@@ -718,7 +526,7 @@ export default function SubAdminPage() {
                 </span>
               </div>
               <div className="mt-1 text-sm text-white/60">
-                Manage balances in More, and approve/decline deposit requests below.
+                Approve or decline pending requests for your invited users.
               </div>
             </div>
             <button
@@ -728,53 +536,6 @@ export default function SubAdminPage() {
             >
               {depositRequestsLoading ? "Refreshing..." : "Refresh Requests"}
             </button>
-          </div>
-
-          <div className="mb-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-base font-semibold">Deposit Wallet Addresses (ON-CHAIN)</div>
-            <div className="mt-1 text-sm text-white/60">
-              Your managed users will see these addresses on Deposit page.
-            </div>
-
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {ASSETS.map((a) => (
-                <label key={a} className="block">
-                  <div className="mb-1 text-xs text-white/60">{a === "SOL" ? "Solana (SOL)" : a}</div>
-                  <input
-                    value={depositAddresses[a] || ""}
-                    onChange={(e) =>
-                      setDepositAddresses((prev) => ({
-                        ...prev,
-                        [a]: e.target.value,
-                      }))
-                    }
-                    placeholder={`${a} wallet address`}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm outline-none"
-                  />
-                </label>
-              ))}
-            </div>
-
-            {depositAddressErr ? <div className="mt-3 text-sm text-red-300">{depositAddressErr}</div> : null}
-            {depositAddressInfo ? <div className="mt-3 text-sm text-emerald-300">{depositAddressInfo}</div> : null}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={depositAddressSaving}
-                onClick={() => void saveDepositAddresses()}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {depositAddressSaving ? "Saving..." : "Save Addresses"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void reloadDepositAddresses()}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
-              >
-                {depositAddressLoading ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
           </div>
 
           <div className="mb-6 rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -871,7 +632,6 @@ export default function SubAdminPage() {
 
           {loading ? <div className="text-white/60">Loading...</div> : null}
           {err ? <div className="text-red-400">{err}</div> : null}
-          {topupInfo ? <div className="mb-3 text-emerald-300">{topupInfo}</div> : null}
           {depositRequestsErr ? <div className="mb-3 text-red-300">{depositRequestsErr}</div> : null}
           {depositRequestsInfo ? <div className="mb-3 text-emerald-300">{depositRequestsInfo}</div> : null}
 
@@ -888,7 +648,7 @@ export default function SubAdminPage() {
                       <th className="py-3 text-right">ETH</th>
                       <th className="py-3 text-right">SOL</th>
                       <th className="py-3 text-right">XRP</th>
-                      <th className="py-3 pr-1 text-right">ACTION</th>
+                      <th className="py-3 pr-1 text-right">REQUESTS</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -913,14 +673,9 @@ export default function SubAdminPage() {
                                 >
                                   Requests {pendingCount}
                                 </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => openTopup(u)}
-                                className="rounded-full bg-yellow-500 px-3 py-1.5 text-sm font-semibold text-black whitespace-nowrap"
-                              >
-                                More
-                              </button>
+                              ) : (
+                                <span className="text-xs text-white/45">-</span>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -937,136 +692,6 @@ export default function SubAdminPage() {
                 </table>
               </div>
 
-              {topupOpen && selectedUser && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-                  <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0b0b] p-5">
-                    <div className="text-lg font-semibold">User Information</div>
-                    <div className="mt-1 text-sm text-white/60">
-                      Review user info and adjust balances.
-                    </div>
-
-                    <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3 text-sm">
-                      <div className="flex justify-between gap-3">
-                        <span className="text-white/60">Username</span>
-                        <span className="text-white">{selectedUser.username || "-"}</span>
-                      </div>
-                      <div className="mt-1 flex justify-between gap-3">
-                        <span className="text-white/60">Email</span>
-                        <span className="text-white">{selectedUser.email || "-"}</span>
-                      </div>
-                      <div className="mt-1 flex justify-between gap-3">
-                        <span className="text-white/60">USDT</span>
-                        <span className="text-white">{fmtAsset(selectedUser.usdt ?? selectedUser.balance, "USDT")}</span>
-                      </div>
-                      <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex items-center justify-between rounded-lg border border-white/10 px-2 py-1">
-                          <span className="text-white/50">BTC</span>
-                          <span>{fmtAsset(selectedUser.btc, "BTC")}</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg border border-white/10 px-2 py-1">
-                          <span className="text-white/50">ETH</span>
-                          <span>{fmtAsset(selectedUser.eth, "ETH")}</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg border border-white/10 px-2 py-1">
-                          <span className="text-white/50">SOL</span>
-                          <span>{fmtAsset(selectedUser.sol, "SOL")}</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg border border-white/10 px-2 py-1">
-                          <span className="text-white/50">XRP</span>
-                          <span>{fmtAsset(selectedUser.xrp, "XRP")}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4">
-                      <div className="mb-2 text-sm font-semibold">
-                        {topupMode === "SUBTRACT" ? "Deduct Balance" : "Top up Balance"}
-                      </div>
-                      <div className="mb-2 text-xs text-white/60">Action</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTopupMode("ADD")}
-                          className={
-                            "rounded-xl px-4 py-2 text-sm font-semibold border " +
-                            (topupMode === "ADD"
-                              ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-200"
-                              : "border-white/10 bg-black/30 text-white/70")
-                          }
-                        >
-                          Top up
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTopupMode("SUBTRACT")}
-                          className={
-                            "rounded-xl px-4 py-2 text-sm font-semibold border " +
-                            (topupMode === "SUBTRACT"
-                              ? "border-rose-400/50 bg-rose-500/20 text-rose-200"
-                              : "border-white/10 bg-black/30 text-white/70")
-                          }
-                        >
-                          Deduct
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4">
-                      <div className="mb-2 text-xs text-white/60">Asset</div>
-                      <select
-                        value={asset}
-                        onChange={(e) => setAsset(e.target.value as Asset)}
-                        className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                      >
-                        {ASSETS.map((a) => (
-                          <option key={a} value={a} className="bg-black">
-                            {a}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <input
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder={topupMode === "SUBTRACT" ? "Amount to deduct" : "Amount to top up"}
-                      className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                    />
-
-                    <input
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder="Note (optional)"
-                      className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                    />
-
-                    {topupErr ? <div className="mt-3 text-sm text-red-300">{topupErr}</div> : null}
-
-                    <div className="mt-4 flex justify-end gap-2">
-                      <button
-                        onClick={closeTopup}
-                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        disabled={topupLoading}
-                        onClick={confirmTopup}
-                        className={
-                          "rounded-xl px-4 py-2 font-semibold disabled:opacity-60 " +
-                          (topupMode === "SUBTRACT" ? "bg-rose-600" : "bg-blue-600")
-                        }
-                      >
-                        {topupLoading
-                          ? "Processing..."
-                          : topupMode === "SUBTRACT"
-                            ? "Confirm Deduct"
-                            : "Confirm Top up"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -1165,7 +790,7 @@ export default function SubAdminPage() {
         </div>
       )}
 
-      {tab === "withdraw" && <WithdrawRequestsPanel />}
+      {tab === "withdraw" && <WithdrawRequestsPanel readOnly />}
 
       {tab === "notify" && <NotifyPanel />}
 

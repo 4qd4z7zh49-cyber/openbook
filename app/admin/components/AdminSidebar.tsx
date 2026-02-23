@@ -174,7 +174,19 @@ export default function AdminSidebar() {
       }`}
     >
       <span className="flex items-center justify-between gap-3">
-        <span>{label}</span>
+        <span
+          className={label === "Manage Subadmin" ? "font-semibold text-cyan-200" : undefined}
+          style={
+            label === "Manage Subadmin"
+              ? {
+                  textShadow:
+                    "0 0 6px rgba(34,211,238,0.85), 0 0 14px rgba(59,130,246,0.55), 0 0 24px rgba(217,70,239,0.35)",
+                }
+              : undefined
+          }
+        >
+          {label}
+        </span>
         {typeof badgeCount === "number" && badgeCount > 0 ? (
           <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-xs font-semibold text-white">
             {badgeCount}
@@ -186,7 +198,16 @@ export default function AdminSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="text-xl font-semibold">Admin</div>
+      <div
+        className="text-xl font-bold tracking-wide"
+        style={{
+          color: "#ecfeff",
+          textShadow:
+            "0 0 6px rgba(34,211,238,0.9), 0 0 14px rgba(59,130,246,0.6), 0 0 24px rgba(217,70,239,0.38)",
+        }}
+      >
+        Superadmin
+      </div>
       <label className="mt-1 block">
         <div className="mb-1 text-[11px] uppercase tracking-[0.08em] text-white/45">Managed By</div>
         <select
@@ -229,7 +250,7 @@ export default function AdminSidebar() {
       )}
 
       <div className="mt-2 border-t border-white/10 pt-3">
-        {item("Manage Admin", pathname === "/admin/manage-admin", goManageAdmin)}
+        {item("Manage Subadmin", pathname === "/admin/manage-admin", goManageAdmin)}
         {item("Manage User", pathname === "/admin/manage-user", goManageUser)}
       </div>
 

@@ -16,20 +16,6 @@ function getSupabaseAdminClient() {
   return createClient(url, key);
 }
 
-const ASSETS = ["USDT", "BTC", "ETH", "SOL", "XRP"] as const;
-type Asset = (typeof ASSETS)[number];
-type AddressMap = Record<Asset, string>;
-
-function emptyAddressMap(): AddressMap {
-  return {
-    USDT: "",
-    BTC: "",
-    ETH: "",
-    SOL: "",
-    XRP: "",
-  };
-}
-
 function getCookie(req: Request, name: string) {
   const cookie = req.headers.get("cookie") || "";
   const m = cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -64,36 +50,7 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const rows = data ?? [];
-  const ids = rows.map((r) => String(r.id));
-  const addressMapByAdmin = new Map<string, AddressMap>();
-
-  if (ids.length > 0) {
-    const { data: addrRows, error: addrErr } = await supabase
-      .from("admin_deposit_addresses")
-      .select("admin_id,asset,address")
-      .in("admin_id", ids);
-
-    if (addrErr) return NextResponse.json({ error: addrErr.message }, { status: 500 });
-
-    (addrRows || []).forEach((row: { admin_id: string; asset: string; address: string | null }) => {
-      const adminId = String(row.admin_id || "");
-      if (!adminId) return;
-      const next = addressMapByAdmin.get(adminId) ?? emptyAddressMap();
-      const asset = String(row.asset || "").toUpperCase();
-      if ((ASSETS as readonly string[]).includes(asset)) {
-        next[asset as Asset] = String(row.address || "");
-      }
-      addressMapByAdmin.set(adminId, next);
-    });
-  }
-
-  const subadmins = rows.map((row) => ({
-    ...row,
-    deposit_addresses: addressMapByAdmin.get(String(row.id)) ?? emptyAddressMap(),
-  }));
-
-  return NextResponse.json({ subadmins });
+  return NextResponse.json({ subadmins: data ?? [] });
 }
 
 export async function POST(req: Request) {

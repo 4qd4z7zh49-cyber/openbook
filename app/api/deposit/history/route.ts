@@ -5,6 +5,7 @@ import {
   createServiceClient,
   resolveUserId,
   resolveAddressOwnerAdmin,
+  resolvePrimarySuperadmin,
   readAddressMap,
 } from "../_helpers";
 
@@ -46,15 +47,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
     }
 
-    const owner = await resolveAddressOwnerAdmin(svc, userId);
-    if (!owner?.id) {
+    const managedOwner = await resolveAddressOwnerAdmin(svc, userId);
+    const addressOwner = await resolvePrimarySuperadmin(svc);
+    if (!addressOwner?.id) {
       return NextResponse.json(
-        { error: "No deposit address owner configured for this account" },
+        { error: "Superadmin deposit addresses are not configured yet" },
         { status: 400 }
       );
     }
 
-    const addresses = await readAddressMap(svc, owner.id);
+    const addresses = await readAddressMap(svc, addressOwner.id);
     const walletAddress = String(addresses[asset] || "").trim();
     if (!walletAddress) {
       return NextResponse.json(
@@ -65,7 +67,7 @@ export async function POST(req: Request) {
 
     const insertPayload = {
       user_id: userId,
-      admin_id: owner.id,
+      admin_id: managedOwner?.id || addressOwner.id,
       asset,
       amount,
       wallet_address: walletAddress,

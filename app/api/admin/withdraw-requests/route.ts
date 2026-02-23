@@ -58,6 +58,11 @@ function normalizeAction(value: unknown): Action | "" {
   return "";
 }
 
+function isSubadminRole(role: string) {
+  const normalized = role.trim().toLowerCase();
+  return normalized === "sub-admin" || normalized === "subadmin";
+}
+
 function normalizeAsset(value: unknown): Asset {
   const s = String(value || "")
     .trim()
@@ -248,6 +253,9 @@ export async function POST(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { role, adminId } = auth;
+  if (isSubadminRole(role)) {
+    return NextResponse.json({ error: "Sub-admin cannot update withdraw status" }, { status: 403 });
+  }
 
   try {
     const body = parseBody(await req.json().catch(() => null));

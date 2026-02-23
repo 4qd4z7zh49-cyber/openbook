@@ -101,6 +101,19 @@ export async function resolveAddressOwnerAdmin(
   return fallbackOwner?.id ? fallbackOwner : null;
 }
 
+export async function resolvePrimarySuperadmin(svc: SupabaseClient): Promise<AdminRow | null> {
+  const { data, error } = await svc
+    .from("admins")
+    .select("id,username,role")
+    .eq("role", "superadmin")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<AdminRow>();
+
+  if (error) throw new Error(error.message);
+  return data?.id ? data : null;
+}
+
 export async function readAddressMap(svc: SupabaseClient, adminId: string) {
   const addresses = emptyAddressMap();
   if (!adminId) return addresses;

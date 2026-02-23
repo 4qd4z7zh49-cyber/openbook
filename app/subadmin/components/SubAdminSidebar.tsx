@@ -19,7 +19,7 @@ const items: Item[] = [
   { key: "topups", label: "Deposit Permission" },
   { key: "mining", label: "Mining Permission" },
   { key: "orders", label: "Trade Permission" },
-  { key: "withdraw", label: "Withdraw Permission" },
+  { key: "withdraw", label: "Withdraw Info" },
   { key: "notify", label: "Mail Notify" },
   { key: "support", label: "Customer Support" },
 ];

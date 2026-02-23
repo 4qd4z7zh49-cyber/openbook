@@ -21,8 +21,21 @@ function emptyMap(): AddressMap {
   };
 }
 
-function isRootAdmin(role: string) {
-  return role === "admin" || role === "superadmin";
+function isSuperadminRole(role: string) {
+  return role.trim().toLowerCase() === "superadmin";
+}
+
+async function resolvePrimarySuperadminId() {
+  const { data, error } = await supabaseAdmin
+    .from("admins")
+    .select("id")
+    .eq("role", "superadmin")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (error) throw new Error(error.message);
+  return data?.id ? String(data.id) : "";
 }
 
 function normalizeBody(value: unknown): AddressBody {
@@ -60,21 +73,18 @@ export async function GET(req: Request) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const url = new URL(req.url);
-    const requestedAdminId = String(url.searchParams.get("adminId") || "").trim();
-
-    let targetAdminId = auth.adminId;
-    if (requestedAdminId && requestedAdminId !== auth.adminId) {
-      if (!isRootAdmin(auth.role)) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-      targetAdminId = requestedAdminId;
+    const ownerAdminId = await resolvePrimarySuperadminId();
+    if (!ownerAdminId) {
+      return NextResponse.json({ error: "Superadmin not configured" }, { status: 400 });
     }
 
-    const addresses = await loadAddressMap(targetAdminId);
+    const addresses = await loadAddressMap(ownerAdminId);
+    const canEdit = isSuperadminRole(auth.role) && auth.adminId === ownerAdminId;
+
     return NextResponse.json({
       ok: true,
-      adminId: targetAdminId,
+      adminId: ownerAdminId,
+      canEdit,
       addresses,
     });
   } catch (e: unknown) {
@@ -86,13 +96,24 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const auth = requireAdminSession(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isSuperadminRole(auth.role)) {
+    return NextResponse.json({ error: "Only superadmin can update deposit addresses" }, { status: 403 });
+  }
 
   try {
+    const ownerAdminId = await resolvePrimarySuperadminId();
+    if (!ownerAdminId) {
+      return NextResponse.json({ error: "Superadmin not configured" }, { status: 400 });
+    }
+    if (auth.adminId !== ownerAdminId) {
+      return NextResponse.json({ error: "Only primary superadmin can update deposit addresses" }, { status: 403 });
+    }
+
     const body = normalizeBody(await req.json().catch(() => null));
     const rawAddresses = body.addresses ?? {};
 
     const payload = ASSETS.map((asset) => ({
-      admin_id: auth.adminId,
+      admin_id: ownerAdminId,
       asset,
       address: sanitizeAddress(rawAddresses[asset]),
     }));
@@ -104,10 +125,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const addresses = await loadAddressMap(auth.adminId);
+    const addresses = await loadAddressMap(ownerAdminId);
     return NextResponse.json({
       ok: true,
-      adminId: auth.adminId,
+      adminId: ownerAdminId,
+      canEdit: true,
       addresses,
     });
   } catch (e: unknown) {
