@@ -78,7 +78,8 @@ function fmtWhen(value: string) {
   return d.toLocaleTimeString();
 }
 
-function statusLabel(status: ThreadStatus) {
+function statusLabel(status: ThreadStatus, isZh: boolean) {
+  if (isZh) return status === "OPEN" ? "进行中" : "已关闭";
   return status === "OPEN" ? "Active" : "Closed";
 }
 
@@ -109,6 +110,7 @@ async function fileToDataUrl(file: File) {
 
 export default function SupportChatPanel() {
   const sp = useSearchParams();
+  const isZh = sp.get("lang") === "zh";
   const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [threads, setThreads] = useState<SupportThread[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -128,6 +130,44 @@ export default function SupportChatPanel() {
   const [imageMenuId, setImageMenuId] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState("");
   const [previewImageName, setPreviewImageName] = useState("");
+  const text = {
+    title: isZh ? "Openbookpro 客服支持" : "Openbookpro Client Support",
+    autoSync: isZh ? "每 3 秒自动同步" : "Auto-sync every 3s",
+    usersTitle: isZh ? "用户会话" : "User Conversations",
+    userFallback: isZh ? "用户" : "User",
+    unread: isZh ? "未读" : "Unread",
+    noThreads: isZh ? "暂无客服消息。" : "No support messages yet.",
+    startSendToUser: isZh ? "开始 / 发送给用户" : "Start / send to user",
+    noUsers: isZh ? "未找到用户" : "No users found",
+    openChat: isZh ? "打开会话" : "Open Chat",
+    startNewChat: isZh ? "新建会话" : "Start New Chat",
+    loadingUsers: isZh ? "加载用户中..." : "Loading users...",
+    replyHours: isZh ? "请在工作时间内回复" : "Reply within working hours",
+    preview: isZh ? "预览" : "Preview",
+    download: isZh ? "下载" : "Download",
+    sent: isZh ? "已发送" : "Sent",
+    noMessages: isZh ? "暂无消息。" : "No messages yet.",
+    selectedPhoto: isZh ? "已选择图片" : "Selected photo",
+    removePhoto: isZh ? "移除图片" : "Remove Photo",
+    replyPlaceholder: isZh ? "输入回复内容..." : "Type your reply...",
+    addPhoto: isZh ? "+ 图片" : "+ Photo",
+    sending: isZh ? "发送中..." : "Sending...",
+    sendReply: isZh ? "发送回复" : "Send Reply",
+    noOpenedThread: isZh
+      ? "当前没有打开的会话。请先在上方选择用户并发送消息以创建新会话。"
+      : "No opened thread. Choose a user above and send a message to create a new chat.",
+    closeImagePreview: isZh ? "关闭图片预览" : "Close image preview",
+    close: isZh ? "关闭" : "Close",
+    loadUsersFailed: isZh ? "加载用户失败" : "Failed to load users",
+    loadChatsFailed: isZh ? "加载客服会话失败" : "Failed to load support chats",
+    onlyImageAllowed: isZh ? "只允许上传图片文件" : "Only image files are allowed",
+    imageLimit: isZh ? "图片大小不能超过 2MB" : "Image size must be 2MB or less",
+    readImageFailed: isZh ? "读取图片失败" : "Failed to read image",
+    chooseUserFirst: isZh ? "请先选择用户" : "Choose a user first",
+    messageOrPhotoRequired: isZh ? "消息或图片至少填写一项" : "Message or photo is required",
+    messageTooLong: isZh ? "消息过长（最多 4000 字）" : "Message is too long (max 4000)",
+    sendFailed: isZh ? "发送消息失败" : "Failed to send message",
+  };
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const activeThreadIdRef = useRef("");
@@ -159,18 +199,18 @@ export default function SupportChatPanel() {
       });
       const j = await readJson<UsersResp>(r);
       if (!r.ok) {
-        throw new Error(j?.error || "Failed to load users");
+        throw new Error(j?.error || text.loadUsersFailed);
       }
       const nextUsers = Array.isArray(j.users) ? j.users : [];
       setUsers(nextUsers);
       setComposeUserId((prev) => prev || nextUsers[0]?.id || "");
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to load users";
+      const message = e instanceof Error ? e.message : text.loadUsersFailed;
       setUsersErr(message);
     } finally {
       setUsersLoading(false);
     }
-  }, [managedBy]);
+  }, [managedBy, text.loadUsersFailed]);
 
   const loadData = useCallback(async (opts?: { threadId?: string; userId?: string; silent?: boolean }) => {
     const threadId = String(opts?.threadId || "");
@@ -196,7 +236,7 @@ export default function SupportChatPanel() {
       });
       const j = await readJson<SupportListResponse>(r);
       if (!r.ok || !j?.ok) {
-        throw new Error(j?.error || "Failed to load support chats");
+        throw new Error(j?.error || text.loadChatsFailed);
       }
       if (seq !== loadSeqRef.current) return;
 
@@ -215,14 +255,14 @@ export default function SupportChatPanel() {
       });
     } catch (e: unknown) {
       if (seq !== loadSeqRef.current) return;
-      const message = e instanceof Error ? e.message : "Failed to load support chats";
+      const message = e instanceof Error ? e.message : text.loadChatsFailed;
       setListErr(message);
     } finally {
       if (!silent && seq === loadSeqRef.current) {
         setLoading(false);
       }
     }
-  }, [managedBy]);
+  }, [managedBy, text.loadChatsFailed]);
 
   useEffect(() => {
     activeThreadIdRef.current = activeThreadId;
@@ -308,11 +348,11 @@ export default function SupportChatPanel() {
   const onPhotoChanged = async (file?: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setSendErr("Only image files are allowed");
+      setSendErr(text.onlyImageAllowed);
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
-      setSendErr("Image size must be 2MB or less");
+      setSendErr(text.imageLimit);
       return;
     }
 
@@ -321,9 +361,8 @@ export default function SupportChatPanel() {
       setPickedImageDataUrl(dataUrl);
       setPickedImageName(file.name);
       setSendErr("");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to read image";
-      setSendErr(message);
+    } catch {
+      setSendErr(text.readImageFailed);
     }
   };
 
@@ -339,15 +378,15 @@ export default function SupportChatPanel() {
     const targetUserId = String(composeUserId || activeThread?.userId || "");
 
     if (!targetThreadId && !targetUserId) {
-      setSendErr("Choose a user first");
+      setSendErr(text.chooseUserFirst);
       return;
     }
     if (!message && !pickedImageDataUrl) {
-      setSendErr("Message or photo is required");
+      setSendErr(text.messageOrPhotoRequired);
       return;
     }
     if (message.length > 4000) {
-      setSendErr("Message is too long (max 4000)");
+      setSendErr(text.messageTooLong);
       return;
     }
 
@@ -367,7 +406,7 @@ export default function SupportChatPanel() {
       });
       const j = await readJson<SupportSendResponse>(r);
       if (!r.ok || !j?.ok || !j.message) {
-        throw new Error(j?.error || "Failed to send message");
+        throw new Error(j?.error || text.sendFailed);
       }
 
       setDraft("");
@@ -383,7 +422,7 @@ export default function SupportChatPanel() {
         setMessages((prev) => [...prev, j.message as SupportMessage]);
       }
     } catch (e: unknown) {
-      const messageText = e instanceof Error ? e.message : "Failed to send message";
+      const messageText = e instanceof Error ? e.message : text.sendFailed;
       setSendErr(messageText);
     } finally {
       setSendLoading(false);
@@ -397,18 +436,18 @@ export default function SupportChatPanel() {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
       <div className="mb-4 flex items-center gap-2">
-        <div className="text-xl font-semibold">Openbookpro Client Support</div>
+        <div className="text-xl font-semibold">{text.title}</div>
         <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
           {pendingCount}
         </span>
       </div>
-      <div className="mb-4 text-xs text-white/50">Auto-sync every 3s</div>
+      <div className="mb-4 text-xs text-white/50">{text.autoSync}</div>
 
       {listErr ? <div className="mb-3 text-sm text-red-300">{listErr}</div> : null}
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="mb-2 text-sm font-semibold text-white">User Conversations</div>
+          <div className="mb-2 text-sm font-semibold text-white">{text.usersTitle}</div>
 
           <div className="max-h-[65vh] space-y-2 overflow-auto pr-1">
             {threads.map((thread) => {
@@ -427,12 +466,12 @@ export default function SupportChatPanel() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">{thread.username || "User"}</div>
+                      <div className="text-sm font-semibold">{thread.username || text.userFallback}</div>
                       <div className="mt-0.5 text-xs text-white/60">{thread.email || "-"}</div>
                     </div>
                     {thread.needsReply ? (
                       <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
-                        Unread
+                        {text.unread}
                       </span>
                     ) : null}
                   </div>
@@ -443,7 +482,7 @@ export default function SupportChatPanel() {
 
             {!loading && threads.length === 0 ? (
               <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
-                No support messages yet.
+                {text.noThreads}
               </div>
             ) : null}
           </div>
@@ -451,7 +490,7 @@ export default function SupportChatPanel() {
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Start / send to user</div>
+            <div className="text-xs text-white/60">{text.startSendToUser}</div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <select
                 value={composeUserId}
@@ -460,12 +499,12 @@ export default function SupportChatPanel() {
               >
                 {users.length === 0 ? (
                   <option value="" className="bg-[#101216] text-white">
-                    No users found
+                    {text.noUsers}
                   </option>
                 ) : null}
                 {users.map((u) => (
                   <option key={u.id} value={u.id} className="bg-[#101216] text-white">
-                    {(u.username || "User") + (u.email ? ` (${u.email})` : "")}
+                    {(u.username || text.userFallback) + (u.email ? ` (${u.email})` : "")}
                   </option>
                 ))}
               </select>
@@ -475,10 +514,10 @@ export default function SupportChatPanel() {
                 disabled={!composeUserId}
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/90 hover:bg-white/10 disabled:opacity-60"
               >
-                {hasExistingThreadForComposeUser ? "Open Chat" : "Start New Chat"}
+                {hasExistingThreadForComposeUser ? text.openChat : text.startNewChat}
               </button>
             </div>
-            {usersLoading ? <div className="mt-2 text-xs text-white/50">Loading users...</div> : null}
+            {usersLoading ? <div className="mt-2 text-xs text-white/50">{text.loadingUsers}</div> : null}
             {usersErr ? <div className="mt-2 text-xs text-red-300">{usersErr}</div> : null}
           </div>
 
@@ -487,15 +526,15 @@ export default function SupportChatPanel() {
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-3">
                 <div>
                   <div className="text-base font-semibold text-white">
-                    {activeThread.username || "User"}
+                    {activeThread.username || text.userFallback}
                   </div>
                   <div className="text-sm text-white/60">{activeThread.email || "-"}</div>
                 </div>
                 <div className="text-right text-xs text-white/60">
                   <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
-                    {statusLabel(activeThread.status)}
+                    {statusLabel(activeThread.status, isZh)}
                   </div>
-                  <div className="mt-1 text-white/45">Reply within working hours</div>
+                  <div className="mt-1 text-white/45">{text.replyHours}</div>
                 </div>
               </div>
 
@@ -552,7 +591,7 @@ export default function SupportChatPanel() {
                                   }}
                                   className="block w-full px-3 py-2 text-left hover:bg-white/10"
                                 >
-                                  Preview
+                                  {text.preview}
                                 </button>
                                 <button
                                   type="button"
@@ -562,7 +601,7 @@ export default function SupportChatPanel() {
                                   }}
                                   className="block w-full px-3 py-2 text-left hover:bg-white/10"
                                 >
-                                  Download
+                                  {text.download}
                                 </button>
                               </div>
                             ) : null}
@@ -598,7 +637,7 @@ export default function SupportChatPanel() {
                           ].join(" ")}
                         >
                           <span>{fmtWhen(row.createdAt)}</span>
-                          {mine ? <span>• Sent</span> : null}
+                          {mine ? <span>• {text.sent}</span> : null}
                         </div>
                       </div>
                     </div>
@@ -607,7 +646,7 @@ export default function SupportChatPanel() {
 
                 {!loading && messages.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">
-                    No messages yet.
+                    {text.noMessages}
                   </div>
                 ) : null}
               </div>
@@ -622,7 +661,7 @@ export default function SupportChatPanel() {
 
               {pickedImageDataUrl ? (
                 <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
-                  <div className="mb-2 text-xs text-white/60">{pickedImageName || "Selected photo"}</div>
+                  <div className="mb-2 text-xs text-white/60">{pickedImageName || text.selectedPhoto}</div>
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -636,7 +675,7 @@ export default function SupportChatPanel() {
                     onClick={clearPhoto}
                     className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80"
                   >
-                    Remove Photo
+                    {text.removePhoto}
                   </button>
                 </div>
               ) : null}
@@ -646,7 +685,7 @@ export default function SupportChatPanel() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   rows={3}
-                  placeholder="Type your reply..."
+                  placeholder={text.replyPlaceholder}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -662,7 +701,7 @@ export default function SupportChatPanel() {
                     onClick={onPickPhoto}
                     className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90 hover:bg-white/10"
                   >
-                    + Photo
+                    {text.addPhoto}
                   </button>
                   <button
                     type="button"
@@ -670,14 +709,14 @@ export default function SupportChatPanel() {
                     onClick={() => void onSend()}
                     className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                   >
-                    {sendLoading ? "Sending..." : "Send Reply"}
+                    {sendLoading ? text.sending : text.sendReply}
                   </button>
                 </div>
               </div>
             </>
           ) : (
             <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/70">
-              No opened thread. Choose a user above and send a message to create a new chat.
+              {text.noOpenedThread}
             </div>
           )}
         </div>
@@ -687,7 +726,7 @@ export default function SupportChatPanel() {
         <div className="fixed inset-0 z-[80] grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
           <button
             type="button"
-            aria-label="Close image preview"
+            aria-label={text.closeImagePreview}
             onClick={() => setPreviewImageUrl("")}
             className="absolute inset-0"
           />
@@ -708,14 +747,14 @@ export default function SupportChatPanel() {
                 }
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
               >
-                Download
+                {text.download}
               </button>
               <button
                 type="button"
                 onClick={() => setPreviewImageUrl("")}
                 className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
               >
-                Close
+                {text.close}
               </button>
             </div>
           </div>

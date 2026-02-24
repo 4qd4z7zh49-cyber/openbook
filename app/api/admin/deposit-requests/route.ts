@@ -45,6 +45,22 @@ function normalizeStatus(value: string | null): Status {
   return "PENDING";
 }
 
+function normalizeStatusFilter(value: string | null): Status | "ALL" {
+  const s = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (s === "ALL") return "ALL";
+  return normalizeStatus(s);
+}
+
+function normalizeTimestamp(value: string | null): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString();
+}
+
 function normalizeAction(value: unknown): Action | "" {
   const s = String(value || "")
     .trim()
@@ -159,11 +175,13 @@ export async function GET(req: Request) {
 
   try {
     const url = new URL(req.url);
-    const statusFilter = normalizeStatus(url.searchParams.get("status"));
+    const statusFilter = normalizeStatusFilter(url.searchParams.get("status"));
+    const fromCreatedAt = normalizeTimestamp(url.searchParams.get("from"));
+    const toCreatedAt = normalizeTimestamp(url.searchParams.get("to"));
     const userId = String(url.searchParams.get("userId") || "").trim();
     const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
     const limitRaw = Number(url.searchParams.get("limit") || 200);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 200;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(2000, Math.floor(limitRaw))) : 200;
     const visibleUserIds = isRootAdminRole(role)
       ? await resolveRootManagedUserIds(managedByRaw)
       : null;
@@ -178,9 +196,18 @@ export async function GET(req: Request) {
     let q = supabaseAdmin
       .from("deposit_history")
       .select("id,user_id,admin_id,asset,amount,wallet_address,status,created_at")
-      .eq("status", statusFilter)
       .order("created_at", { ascending: false })
       .limit(limit);
+
+    if (statusFilter !== "ALL") {
+      q = q.eq("status", statusFilter);
+    }
+    if (fromCreatedAt) {
+      q = q.gte("created_at", fromCreatedAt);
+    }
+    if (toCreatedAt) {
+      q = q.lt("created_at", toCreatedAt);
+    }
 
     if (!isRootAdminRole(role)) {
       q = q.eq("admin_id", adminId);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type SuperadminProfileRow = {
   id: string;
@@ -31,6 +32,8 @@ function fmtDate(value?: string | null) {
 }
 
 export default function SuperadminProfilePage() {
+  const sp = useSearchParams();
+  const isZh = sp.get("lang") === "zh";
   const [profile, setProfile] = useState<SuperadminProfileRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -46,8 +49,46 @@ export default function SuperadminProfilePage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [changePasswordErr, setChangePasswordErr] = useState("");
   const [changePasswordInfo, setChangePasswordInfo] = useState("");
+  const text = {
+    pageTitle: isZh ? "超级管理员资料" : "Super Admin Profile",
+    pageDesc: isZh
+      ? "查看超级管理员账号信息、邀请码和密码控制。"
+      : "View superadmin account information, invitation code, and password controls.",
+    loading: isZh ? "加载中..." : "Loading...",
+    username: isZh ? "用户名" : "Username",
+    role: isZh ? "角色" : "Role",
+    adminId: isZh ? "管理员 ID" : "Admin ID",
+    managedUsers: isZh ? "管理用户数" : "Managed Users",
+    createdDate: isZh ? "创建日期" : "Created Date",
+    inviteCodeTitle: isZh ? "邀请码" : "Invitation Code",
+    inviteCodeDesc: isZh
+      ? "该邀请码可用于分配和账号流程。"
+      : "This code can be used for assignment and account workflows.",
+    updating: isZh ? "更新中..." : "Updating...",
+    regenerateCode: isZh ? "重新生成邀请码" : "Regenerate Code",
+    refresh: isZh ? "刷新" : "Refresh",
+    security: isZh ? "安全设置" : "Security",
+    securityDesc: isZh
+      ? "将密码更新流程统一放在这里。"
+      : "Move your password update workflow here from Manage Subadmin.",
+    cancel: isZh ? "取消" : "Cancel",
+    changePassword: isZh ? "修改密码" : "Change Password",
+    currentPassword: isZh ? "当前密码" : "Current password",
+    newPasswordMin8: isZh ? "新密码（最少 8 位）" : "New password (min 8)",
+    confirmNewPassword: isZh ? "确认新密码" : "Confirm new password",
+    updatePassword: isZh ? "更新密码" : "Update Password",
+    loadFailed: isZh ? "加载超级管理员资料失败" : "Failed to load superadmin profile",
+    regenerateFailed: isZh ? "重新生成邀请码失败" : "Failed to regenerate invitation code",
+    inviteUpdated: isZh ? "邀请码已更新。" : "Invitation code updated.",
+    changePasswordFailed: isZh ? "修改密码失败" : "Failed to change password",
+    passwordMin8: isZh ? "新密码至少需要 8 个字符" : "New password must be at least 8 characters",
+    passwordMismatch: isZh
+      ? "新密码与确认密码不一致"
+      : "New password and confirm password do not match",
+    passwordUpdated: isZh ? "密码更新成功。" : "Password updated successfully.",
+  };
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
@@ -57,20 +98,20 @@ export default function SuperadminProfilePage() {
       });
       const json = (await res.json().catch(() => ({}))) as ProfileResponse;
       if (!res.ok || !json?.ok || !json.profile) {
-        throw new Error(json?.error || "Failed to load superadmin profile");
+        throw new Error(json?.error || text.loadFailed);
       }
       setProfile(json.profile);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to load superadmin profile";
+      const message = e instanceof Error ? e.message : text.loadFailed;
       setErr(message);
     } finally {
       setLoading(false);
     }
-  }
+  }, [text.loadFailed]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   async function regenerateInviteCode() {
     setInviteBusy(true);
@@ -85,12 +126,12 @@ export default function SuperadminProfilePage() {
       });
       const json = (await res.json().catch(() => ({}))) as ProfileResponse;
       if (!res.ok || !json?.ok || !json.profile) {
-        throw new Error(json?.error || "Failed to regenerate invitation code");
+        throw new Error(json?.error || text.regenerateFailed);
       }
       setProfile(json.profile);
-      setInviteInfo("Invitation code updated.");
+      setInviteInfo(text.inviteUpdated);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to regenerate invitation code";
+      const message = e instanceof Error ? e.message : text.regenerateFailed;
       setInviteErr(message);
     } finally {
       setInviteBusy(false);
@@ -103,10 +144,10 @@ export default function SuperadminProfilePage() {
     setChangePasswordInfo("");
     try {
       if (newPassword.length < 8) {
-        throw new Error("New password must be at least 8 characters");
+        throw new Error(text.passwordMin8);
       }
       if (newPassword !== confirmNewPassword) {
-        throw new Error("New password and confirm password do not match");
+        throw new Error(text.passwordMismatch);
       }
 
       const res = await fetch("/api/admin/change-password", {
@@ -121,16 +162,16 @@ export default function SuperadminProfilePage() {
 
       const json = (await res.json().catch(() => ({}))) as ChangePasswordResponse;
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Failed to change password");
+        throw new Error(json?.error || text.changePasswordFailed);
       }
 
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
       setPasswordOpen(false);
-      setChangePasswordInfo("Password updated successfully.");
+      setChangePasswordInfo(text.passwordUpdated);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to change password";
+      const message = e instanceof Error ? e.message : text.changePasswordFailed;
       setChangePasswordErr(message);
     } finally {
       setChangingPassword(false);
@@ -148,37 +189,37 @@ export default function SuperadminProfilePage() {
               "0 0 6px rgba(34,211,238,0.85), 0 0 14px rgba(59,130,246,0.55), 0 0 24px rgba(217,70,239,0.35)",
           }}
         >
-          Super Admin Profile
+          {text.pageTitle}
         </div>
         <p className="mt-2 text-white/60">
-          View superadmin account information, invitation code, and password controls.
+          {text.pageDesc}
         </p>
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-        {loading ? <div className="text-white/60">Loading...</div> : null}
+        {loading ? <div className="text-white/60">{text.loading}</div> : null}
         {err ? <div className="text-red-400">{err}</div> : null}
 
         {!loading && !err && profile ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <div className="text-xs uppercase tracking-[0.08em] text-white/50">Username</div>
+              <div className="text-xs uppercase tracking-[0.08em] text-white/50">{text.username}</div>
               <div className="mt-2 text-lg font-semibold">{profile.username || "-"}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <div className="text-xs uppercase tracking-[0.08em] text-white/50">Role</div>
+              <div className="text-xs uppercase tracking-[0.08em] text-white/50">{text.role}</div>
               <div className="mt-2 text-lg font-semibold uppercase">{profile.role || "-"}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <div className="text-xs uppercase tracking-[0.08em] text-white/50">Admin ID</div>
+              <div className="text-xs uppercase tracking-[0.08em] text-white/50">{text.adminId}</div>
               <div className="mt-2 break-all font-mono text-sm text-white/85">{profile.id}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <div className="text-xs uppercase tracking-[0.08em] text-white/50">Managed Users</div>
+              <div className="text-xs uppercase tracking-[0.08em] text-white/50">{text.managedUsers}</div>
               <div className="mt-2 text-lg font-semibold">{profile.managedUsersCount}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4 sm:col-span-2">
-              <div className="text-xs uppercase tracking-[0.08em] text-white/50">Created Date</div>
+              <div className="text-xs uppercase tracking-[0.08em] text-white/50">{text.createdDate}</div>
               <div className="mt-2 text-lg font-semibold">{fmtDate(profile.createdAt)}</div>
             </div>
           </div>
@@ -186,9 +227,9 @@ export default function SuperadminProfilePage() {
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <div className="text-lg font-semibold">Invitation Code</div>
+        <div className="text-lg font-semibold">{text.inviteCodeTitle}</div>
         <p className="mt-2 text-sm text-white/60">
-          This code can be used for assignment and account workflows.
+          {text.inviteCodeDesc}
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -201,7 +242,7 @@ export default function SuperadminProfilePage() {
             onClick={() => void regenerateInviteCode()}
             className="rounded-xl border border-cyan-300/40 bg-cyan-500/20 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:opacity-60"
           >
-            {inviteBusy ? "Updating..." : "Regenerate Code"}
+            {inviteBusy ? text.updating : text.regenerateCode}
           </button>
           <button
             type="button"
@@ -209,7 +250,7 @@ export default function SuperadminProfilePage() {
             onClick={() => void load()}
             className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm"
           >
-            Refresh
+            {text.refresh}
           </button>
         </div>
 
@@ -220,9 +261,9 @@ export default function SuperadminProfilePage() {
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-lg font-semibold">Security</div>
+            <div className="text-lg font-semibold">{text.security}</div>
             <p className="mt-2 text-sm text-white/60">
-              Move your password update workflow here from Manage Subadmin.
+              {text.securityDesc}
             </p>
           </div>
           <button
@@ -230,7 +271,7 @@ export default function SuperadminProfilePage() {
             onClick={() => setPasswordOpen((prev) => !prev)}
             className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
           >
-            {passwordOpen ? "Cancel" : "Change Password"}
+            {passwordOpen ? text.cancel : text.changePassword}
           </button>
         </div>
 
@@ -239,21 +280,21 @@ export default function SuperadminProfilePage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <input
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                placeholder="Current password"
+                placeholder={text.currentPassword}
                 type="password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
               />
               <input
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                placeholder="New password (min 8)"
+                placeholder={text.newPasswordMin8}
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
               <input
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
-                placeholder="Confirm new password"
+                placeholder={text.confirmNewPassword}
                 type="password"
                 value={confirmNewPassword}
                 onChange={(e) => setConfirmNewPassword(e.target.value)}
@@ -271,7 +312,7 @@ export default function SuperadminProfilePage() {
               }
               className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-60"
             >
-              {changingPassword ? "Updating..." : "Update Password"}
+              {changingPassword ? text.updating : text.updatePassword}
             </button>
           </div>
         ) : null}

@@ -19,12 +19,16 @@ type ManagersResponse = {
   managers?: ManagerRow[];
 };
 
+type SidebarLang = "en" | "zh";
+
 export default function AdminSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const tab = (sp.get("tab") || "overview").toLowerCase();
   const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
+  const lang: SidebarLang = sp.get("lang") === "zh" ? "zh" : "en";
+  const isZh = lang === "zh";
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [logoutErr, setLogoutErr] = useState("");
   const [pendingDepositCount, setPendingDepositCount] = useState(0);
@@ -33,6 +37,32 @@ export default function AdminSidebar() {
   const [pendingSupportCount, setPendingSupportCount] = useState(0);
   const [managers, setManagers] = useState<ManagerRow[]>([]);
   const [managersLoading, setManagersLoading] = useState(false);
+  const text = {
+    superadmin: isZh ? "超级管理员" : "Superadmin",
+    managedBy: isZh ? "管理者" : "Managed By",
+    allUsers: isZh ? "全部用户" : "All users",
+    unassigned: isZh ? "未分配" : "Unassigned",
+    overview: isZh ? "总览" : "Overview",
+    userControl: isZh ? "用户控制" : "User Control",
+    depositPermission: isZh ? "充值权限" : "Deposit Permission",
+    miningPermission: isZh ? "挖矿权限" : "Mining Permission",
+    tradePermission: isZh ? "交易权限" : "Trade Permission",
+    withdrawPermission: isZh ? "提现权限" : "Withdraw Permission",
+    mailNotify: isZh ? "邮件通知" : "Mail Notify",
+    customerSupport: isZh ? "客服支持" : "Customer Support",
+    superAdminProfile: isZh ? "超级管理员资料" : "Super Admin Profile",
+    manageSubadmin: isZh ? "管理子管理员" : "Manage Subadmin",
+    manageUser: isZh ? "管理用户" : "Manage User",
+    logout: isZh ? "退出登录" : "Log out",
+    loggingOut: isZh ? "正在退出..." : "Logging out...",
+  };
+
+  const pushWithLang = (basePath: string) => {
+    const params = new URLSearchParams();
+    if (lang === "zh") params.set("lang", "zh");
+    const qs = params.toString();
+    router.push(qs ? `${basePath}?${qs}` : basePath);
+  };
 
   const goTab = (t: string) => {
     const params = new URLSearchParams(sp.toString());
@@ -44,9 +74,20 @@ export default function AdminSidebar() {
     }
     router.push(`/admin?${params.toString()}`);
   };
-  const goManageAdmin = () => router.push("/admin/manage-admin");
-  const goManageUser = () => router.push("/admin/manage-user");
-  const goSuperAdminProfile = () => router.push("/admin/superadmin-profile");
+  const goManageAdmin = () => pushWithLang("/admin/manage-admin");
+  const goManageUser = () => pushWithLang("/admin/manage-user");
+  const goSuperAdminProfile = () => pushWithLang("/admin/superadmin-profile");
+
+  const onChangeLang = (next: SidebarLang) => {
+    const params = new URLSearchParams(sp.toString());
+    if (next === "zh") {
+      params.set("lang", "zh");
+    } else {
+      params.delete("lang");
+    }
+    const qs = params.toString();
+    router.push(`${pathname}${qs ? `?${qs}` : ""}`);
+  };
 
   const onChangeManagedBy = (value: string) => {
     const params = new URLSearchParams(sp.toString());
@@ -167,7 +208,13 @@ export default function AdminSidebar() {
     };
   }, []);
 
-  const item = (label: string, active: boolean, onClick: () => void, badgeCount?: number) => (
+  const item = (
+    label: string,
+    active: boolean,
+    onClick: () => void,
+    badgeCount?: number,
+    glow?: boolean
+  ) => (
     <button
       onClick={onClick}
       className={`w-full rounded-xl px-4 py-3 text-left ${
@@ -176,9 +223,9 @@ export default function AdminSidebar() {
     >
       <span className="flex items-center justify-between gap-3">
         <span
-          className={label === "Manage Subadmin" ? "font-semibold text-cyan-200" : undefined}
+          className={glow ? "font-semibold text-cyan-200" : undefined}
           style={
-            label === "Manage Subadmin"
+            glow
               ? {
                   textShadow:
                     "0 0 6px rgba(34,211,238,0.85), 0 0 14px rgba(59,130,246,0.55), 0 0 24px rgba(217,70,239,0.35)",
@@ -199,18 +246,42 @@ export default function AdminSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div
-        className="text-xl font-bold tracking-wide"
-        style={{
-          color: "#ecfeff",
-          textShadow:
-            "0 0 6px rgba(34,211,238,0.9), 0 0 14px rgba(59,130,246,0.6), 0 0 24px rgba(217,70,239,0.38)",
-        }}
-      >
-        Superadmin
+      <div className="flex items-center justify-between gap-2">
+        <div
+          className="text-xl font-bold tracking-wide"
+          style={{
+            color: "#ecfeff",
+            textShadow:
+              "0 0 6px rgba(34,211,238,0.9), 0 0 14px rgba(59,130,246,0.6), 0 0 24px rgba(217,70,239,0.38)",
+          }}
+        >
+          {text.superadmin}
+        </div>
+        <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => onChangeLang("en")}
+            className={
+              "rounded-md px-2 py-1 font-semibold " +
+              (!isZh ? "bg-white/15 text-white" : "text-white/65 hover:bg-white/10")
+            }
+          >
+            EN
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeLang("zh")}
+            className={
+              "rounded-md px-2 py-1 font-semibold " +
+              (isZh ? "bg-white/15 text-white" : "text-white/65 hover:bg-white/10")
+            }
+          >
+            中文
+          </button>
+        </div>
       </div>
       <label className="mt-1 block">
-        <div className="mb-1 text-[11px] uppercase tracking-[0.08em] text-white/45">Managed By</div>
+        <div className="mb-1 text-[11px] uppercase tracking-[0.08em] text-white/45">{text.managedBy}</div>
         <select
           value={managedBy}
           onChange={(e) => onChangeManagedBy(e.target.value)}
@@ -218,10 +289,10 @@ export default function AdminSidebar() {
           className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
         >
           <option value="ALL" className="bg-black">
-            All users
+            {text.allUsers}
           </option>
           <option value="UNASSIGNED" className="bg-black">
-            Unassigned
+            {text.unassigned}
           </option>
           {managers.map((m) => (
             <option key={m.id} value={m.id} className="bg-black">
@@ -231,20 +302,20 @@ export default function AdminSidebar() {
         </select>
       </label>
 
-      {item("Overview", tab === "overview", () => goTab("overview"))}
-      {item("User Control", tab === "users", () => goTab("users"))}
-      {item("Deposit Permission", tab === "topups", () => goTab("topups"), pendingDepositCount)}
-      {item("Mining Permission", tab === "mining", () => goTab("mining"))}
-      {item("Trade Permission", tab === "orders", () => goTab("orders"))}
-      {item("Withdraw Permission", tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
+      {item(text.overview, tab === "overview", () => goTab("overview"))}
+      {item(text.userControl, tab === "users", () => goTab("users"))}
+      {item(text.depositPermission, tab === "topups", () => goTab("topups"), pendingDepositCount)}
+      {item(text.miningPermission, tab === "mining", () => goTab("mining"))}
+      {item(text.tradePermission, tab === "orders", () => goTab("orders"))}
+      {item(text.withdrawPermission, tab === "withdraw", () => goTab("withdraw"), pendingWithdrawCount)}
       {item(
-        "Mail Notify",
+        text.mailNotify,
         tab === "notify",
         () => goTab("notify"),
         tab === "notify" ? 0 : pendingNotifyCount
       )}
       {item(
-        "Customer Support",
+        text.customerSupport,
         tab === "support",
         () => goTab("support"),
         tab === "support" ? 0 : pendingSupportCount
@@ -252,12 +323,12 @@ export default function AdminSidebar() {
 
       <div className="mt-2 border-t border-white/10 pt-3">
         {item(
-          "Super Admin Profile",
+          text.superAdminProfile,
           pathname === "/admin/superadmin-profile",
           goSuperAdminProfile
         )}
-        {item("Manage Subadmin", pathname === "/admin/manage-admin", goManageAdmin)}
-        {item("Manage User", pathname === "/admin/manage-user", goManageUser)}
+        {item(text.manageSubadmin, pathname === "/admin/manage-admin", goManageAdmin, undefined, true)}
+        {item(text.manageUser, pathname === "/admin/manage-user", goManageUser)}
       </div>
 
       <div className="mt-auto border-t border-white/10 pt-3">
@@ -267,7 +338,7 @@ export default function AdminSidebar() {
           disabled={logoutLoading}
           className="w-full rounded-xl border border-rose-400/30 bg-rose-600/90 px-4 py-3 text-left font-semibold text-white disabled:opacity-60"
         >
-          {logoutLoading ? "Logging out..." : "Log out"}
+          {logoutLoading ? text.loggingOut : text.logout}
         </button>
         {logoutErr ? <div className="mt-2 text-xs text-red-300">{logoutErr}</div> : null}
       </div>

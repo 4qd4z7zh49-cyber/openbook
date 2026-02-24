@@ -64,12 +64,14 @@ function statusBadgeClass(status: NotifyStatus) {
     : "border-amber-300/30 bg-amber-500/10 text-amber-200";
 }
 
-function statusLabel(status: NotifyStatus) {
+function statusLabel(status: NotifyStatus, isZh: boolean) {
+  if (isZh) return status === "CONFIRMED" ? "已读" : "未读";
   return status === "CONFIRMED" ? "READ" : "UNREAD";
 }
 
 export default function NotifyPanel() {
   const sp = useSearchParams();
+  const isZh = sp.get("lang") === "zh";
   const managedBy = String(sp.get("managedBy") || "ALL").trim() || "ALL";
   const [users, setUsers] = useState<UserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -87,6 +89,29 @@ export default function NotifyPanel() {
   const [unreadByUserId, setUnreadByUserId] = useState<Record<string, number>>({});
   const [loadingRows, setLoadingRows] = useState(false);
   const [rowsErr, setRowsErr] = useState("");
+  const text = {
+    title: isZh ? "用户通知" : "Notify Users",
+    refresh: isZh ? "刷新" : "Refresh",
+    users: isZh ? "用户" : "Users",
+    loadingUsers: isZh ? "加载用户中..." : "Loading users...",
+    noUsers: isZh ? "未找到用户。" : "No users found.",
+    composeTitle: isZh ? "编写通知（Gmail 样式）" : "Compose (Gmail style)",
+    to: isZh ? "收件人" : "To",
+    subjectPlaceholder: isZh ? "主题" : "Subject",
+    messagePlaceholder: isZh ? "请输入通知内容" : "Write your message",
+    sending: isZh ? "发送中..." : "Sending...",
+    send: isZh ? "发送通知" : "Send Notification",
+    sentStatus: isZh ? "发送记录 / 状态" : "Sent / Status",
+    loading: isZh ? "加载中..." : "Loading...",
+    noRows: isZh ? "暂无通知记录。" : "No notifications yet.",
+    loadUsersFailed: isZh ? "加载用户失败" : "Failed to load users",
+    loadNotifyFailed: isZh ? "加载通知失败" : "Failed to load notifications",
+    selectUser: isZh ? "请选择用户" : "Please select a user",
+    subjectRequired: isZh ? "主题不能为空" : "Subject is required",
+    messageRequired: isZh ? "内容不能为空" : "Message is required",
+    sendFailed: isZh ? "发送通知失败" : "Failed to send notification",
+    sendSuccess: isZh ? "通知已发送。" : "Notification sent.",
+  };
 
   const selectedUser = useMemo(
     () => users.find((u) => u.id === selectedUserId) || null,
@@ -108,7 +133,7 @@ export default function NotifyPanel() {
       });
       const j = await readJson<UsersResp>(r);
       if (!r.ok) {
-        throw new Error(j?.error || "Failed to load users");
+        throw new Error(j?.error || text.loadUsersFailed);
       }
 
       const nextUsers = Array.isArray(j.users) ? j.users : [];
@@ -118,12 +143,12 @@ export default function NotifyPanel() {
         return nextUsers[0]?.id || "";
       });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to load users";
+      const message = e instanceof Error ? e.message : text.loadUsersFailed;
       setUsersErr(message);
     } finally {
       setUsersLoading(false);
     }
-  }, [managedBy]);
+  }, [managedBy, text.loadUsersFailed]);
 
   const loadRows = useCallback(async (userId = selectedUserId) => {
     setLoadingRows(true);
@@ -139,7 +164,7 @@ export default function NotifyPanel() {
       });
       const j = await readJson<NotifyListResp>(r);
       if (!r.ok || !j?.ok) {
-        throw new Error(j?.error || "Failed to load notifications");
+        throw new Error(j?.error || text.loadNotifyFailed);
       }
       setRows(Array.isArray(j.notifications) ? j.notifications : []);
       const unreadMap = j.unreadByUserId && typeof j.unreadByUserId === "object" ? j.unreadByUserId : {};
@@ -147,12 +172,12 @@ export default function NotifyPanel() {
       const unreadTotal = Object.values(unreadMap).reduce((sum, n) => sum + Number(n || 0), 0);
       setPendingCount(Number(j.pendingCount ?? unreadTotal));
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to load notifications";
+      const message = e instanceof Error ? e.message : text.loadNotifyFailed;
       setRowsErr(message);
     } finally {
       setLoadingRows(false);
     }
-  }, [selectedUserId, managedBy]);
+  }, [selectedUserId, managedBy, text.loadNotifyFailed]);
 
   useEffect(() => {
     void loadUsers();
@@ -164,15 +189,15 @@ export default function NotifyPanel() {
 
   const onSend = async () => {
     if (!selectedUserId) {
-      setSendErr("Please select a user");
+      setSendErr(text.selectUser);
       return;
     }
     if (!subject.trim()) {
-      setSendErr("Subject is required");
+      setSendErr(text.subjectRequired);
       return;
     }
     if (!message.trim()) {
-      setSendErr("Message is required");
+      setSendErr(text.messageRequired);
       return;
     }
 
@@ -192,7 +217,7 @@ export default function NotifyPanel() {
       });
       const j = await readJson<NotifyCreateResp>(r);
       if (!r.ok || !j?.ok || !j.notification) {
-        throw new Error(j?.error || "Failed to send notification");
+        throw new Error(j?.error || text.sendFailed);
       }
 
       const enriched = {
@@ -206,11 +231,11 @@ export default function NotifyPanel() {
         [selectedUserId]: Number(prev[selectedUserId] || 0) + 1,
       }));
       setPendingCount((prev) => Number(j.pendingCount ?? prev + 1));
-      setSendInfo("Notification sent.");
+      setSendInfo(text.sendSuccess);
       setSubject("");
       setMessage("");
     } catch (e: unknown) {
-      const messageText = e instanceof Error ? e.message : "Failed to send notification";
+      const messageText = e instanceof Error ? e.message : text.sendFailed;
       setSendErr(messageText);
     } finally {
       setSendLoading(false);
@@ -221,7 +246,7 @@ export default function NotifyPanel() {
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="text-xl font-semibold">Notify Users</div>
+          <div className="text-xl font-semibold">{text.title}</div>
           <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
             {pendingCount}
           </span>
@@ -234,14 +259,14 @@ export default function NotifyPanel() {
           }}
           className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
         >
-          Refresh
+          {text.refresh}
         </button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="mb-2 text-sm font-semibold text-white">Users</div>
-          {usersLoading ? <div className="text-xs text-white/60">Loading users...</div> : null}
+          <div className="mb-2 text-sm font-semibold text-white">{text.users}</div>
+          {usersLoading ? <div className="text-xs text-white/60">{text.loadingUsers}</div> : null}
           {usersErr ? <div className="text-xs text-red-300">{usersErr}</div> : null}
 
           <div className="max-h-[460px] space-y-2 overflow-auto pr-1">
@@ -275,7 +300,7 @@ export default function NotifyPanel() {
 
             {!usersLoading && users.length === 0 ? (
               <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
-                No users found.
+                {text.noUsers}
               </div>
             ) : null}
           </div>
@@ -283,15 +308,15 @@ export default function NotifyPanel() {
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-base font-semibold">Compose (Gmail style)</div>
+            <div className="text-base font-semibold">{text.composeTitle}</div>
             <div className="mt-1 text-sm text-white/60">
-              To: {selectedUser?.email || "-"}
+              {text.to}: {selectedUser?.email || "-"}
             </div>
 
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Subject"
+              placeholder={text.subjectPlaceholder}
               className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
             />
 
@@ -299,7 +324,7 @@ export default function NotifyPanel() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={8}
-              placeholder="Write your message"
+              placeholder={text.messagePlaceholder}
               className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none"
             />
 
@@ -313,20 +338,20 @@ export default function NotifyPanel() {
                 onClick={() => void onSend()}
                 className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {sendLoading ? "Sending..." : "Send Notification"}
+                {sendLoading ? text.sending : text.send}
               </button>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="mb-3 text-base font-semibold">Sent / Status</div>
+            <div className="mb-3 text-base font-semibold">{text.sentStatus}</div>
 
             {rowsErr ? <div className="mb-3 text-sm text-red-300">{rowsErr}</div> : null}
-            {loadingRows ? <div className="text-sm text-white/60">Loading...</div> : null}
+            {loadingRows ? <div className="text-sm text-white/60">{text.loading}</div> : null}
 
             {!loadingRows && rows.length === 0 ? (
               <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">
-                No notifications yet.
+                {text.noRows}
               </div>
             ) : null}
 
@@ -347,7 +372,7 @@ export default function NotifyPanel() {
                           statusBadgeClass(row.status),
                         ].join(" ")}
                       >
-                        {statusLabel(row.status)}
+                        {statusLabel(row.status, isZh)}
                       </span>
                     </div>
 

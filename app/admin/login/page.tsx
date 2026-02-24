@@ -2,11 +2,16 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ADMIN_LOGIN_MAINTENANCE_MESSAGE,
+  ADMIN_LOGIN_MAINTENANCE_NOTICE_ENABLED,
+} from "@/lib/maintenance";
 
 function AdminLoginPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/admin";
+  const maintenanceMode = ADMIN_LOGIN_MAINTENANCE_NOTICE_ENABLED;
 
   const [username, setUsername] = useState("");
   const [pw, setPw] = useState("");
@@ -23,6 +28,10 @@ function AdminLoginPageInner() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
+    if (maintenanceMode) {
+      setErr(ADMIN_LOGIN_MAINTENANCE_MESSAGE);
+      return;
+    }
     setErr("");
     setLoading(true);
     setLoginAttempt((v) => v + 1);
@@ -88,6 +97,11 @@ function AdminLoginPageInner() {
             <p className="mt-1 text-sm text-white/60">
               Secure access for admin and sub-admin operations.
             </p>
+            {maintenanceMode ? (
+              <div className="mt-4 rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                {ADMIN_LOGIN_MAINTENANCE_MESSAGE}
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-4">
@@ -100,7 +114,8 @@ function AdminLoginPageInner() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
-                className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/25"
+                disabled={maintenanceMode || loading}
+                className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-55"
               />
             </label>
 
@@ -114,7 +129,8 @@ function AdminLoginPageInner() {
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/25"
+                disabled={maintenanceMode || loading}
+                className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-55"
               />
             </label>
 
@@ -125,10 +141,10 @@ function AdminLoginPageInner() {
             ) : null}
 
             <button
-              disabled={loading || !username.trim() || !pw}
+              disabled={maintenanceMode || loading || !username.trim() || !pw}
               className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Logging in..." : "Sign in"}
+              {maintenanceMode ? "Maintenance in progress" : loading ? "Logging in..." : "Sign in"}
             </button>
             {loading && loginAttempt > 0 ? (
               <div className="text-center text-xs text-white/55">If it takes too long, request will auto-timeout.</div>

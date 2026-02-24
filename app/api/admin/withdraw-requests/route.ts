@@ -47,6 +47,14 @@ function normalizeStatus(value: unknown): WithdrawStatus {
   return "PENDING";
 }
 
+function normalizeTimestamp(value: string | null): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString();
+}
+
 function normalizeAction(value: unknown): Action | "" {
   const s = String(value || "")
     .trim()
@@ -169,10 +177,12 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const statusRaw = String(url.searchParams.get("status") || "").trim().toUpperCase();
+    const fromCreatedAt = normalizeTimestamp(url.searchParams.get("from"));
+    const toCreatedAt = normalizeTimestamp(url.searchParams.get("to"));
     const userId = String(url.searchParams.get("userId") || "").trim();
     const managedByRaw = String(url.searchParams.get("managedBy") || "").trim();
     const limitRaw = Number(url.searchParams.get("limit") || 300);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 300;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(2000, Math.floor(limitRaw))) : 300;
     const visibleUserIds = isRootAdminRole(role)
       ? await resolveRootManagedUserIds(managedByRaw)
       : null;
@@ -192,6 +202,12 @@ export async function GET(req: Request) {
 
     if (statusRaw && statusRaw !== "ALL") {
       q = q.eq("status", normalizeStatus(statusRaw));
+    }
+    if (fromCreatedAt) {
+      q = q.gte("created_at", fromCreatedAt);
+    }
+    if (toCreatedAt) {
+      q = q.lt("created_at", toCreatedAt);
     }
     if (userId) {
       q = q.eq("user_id", userId);
